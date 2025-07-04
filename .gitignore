@@ -1,0 +1,66 @@
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+coverage/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+dist/
+
+# misc
+.DS_Store
+Thumbs.db
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Misc
+*.local
+*.log
+
+# Public export (if used)
+public/export/
+
+# Tailwind JIT cache
+.tailwind-cache/

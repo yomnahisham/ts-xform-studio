@@ -22,7 +22,7 @@ A modern web-based IDE for designing, assembling, and simulating custom Instruct
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yomnahisham/ts-isa-playground.git
+   git clone https://github.com/yomnahisham/ts-xform-studio.git
    cd ts-isa-playground
    ```
 

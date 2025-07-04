@@ -1,6 +1,6 @@
 # xForm Studio
 
-A modern web-based IDE for designing, assembling, and simulating custom Instruction Set Architectures (ISAs) using the [py-isa-xform](https://github.com/yomnahisham/py-isa-xform) library.
+A modern web-based IDE for designing, assembling, and simulating custom Instruction Set Architectures (ISAs) using the [~xform](https://github.com/yomnahisham/py-isa-xform) library.
 
 ## Tech Stack
 

@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Lightbulb
 } from 'lucide-react';
+import Image from 'next/image';
 
 // CPU Pipeline SVG Component
 const CpuPipeline = () => (
@@ -298,10 +299,8 @@ export default function Home() {
         <div className="container mx-auto px-6 py-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
-                <Cpu className="w-4 h-4 text-white" />
-              </div>
-              <h1 className="text-lg font-bold text-gradient">xForm Studio</h1>
+              <Image src="/favicon.svg" alt="xForm Studio Logo" width={28} height={28} className="mr-1" />
+              <h1 className="text-lg font-bold" style={{ color: '#5B21B6' }}>xForm Studio</h1>
             </div>
             
             <div className="flex items-center gap-2">

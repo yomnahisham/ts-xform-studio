@@ -104,6 +104,25 @@ function addOrUpdateFolder(root: FileNode[], newFolder: FileNode): FileNode[] {
   return updated;
 }
 
+const downloadBinary = async (isaDefinition: any, assemblyCode: string) => {
+  const res = await fetch('/api/assemble?download=true', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isaDefinition, assemblyCode }),
+  });
+
+  if (!res.ok) {
+    throw new Error('Download failed.');
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'output.bin';
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
 
 export default function IsaEditor() {
   const router = useRouter();
@@ -1230,6 +1249,8 @@ DATA:
 
         // ✅ Add or update in the tree
         setFiles(prev => addOrUpdateFolder(prev, outputFolder));
+
+        await downloadBinary(isaJson, asmFile.content || '');
       }
     } catch (e) {
       setTerminalHistory(prev => [...prev, 'Error: Failed to run.']);
@@ -1812,6 +1833,36 @@ DATA:
                   className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                   onClick={e => { e.stopPropagation(); setActiveAsmFileId(node.id); setContextMenu(null); setTerminalHistory(prev => [...prev, `✔️ Set as Active Assembly: ${node.name}`]); }}
                 >Set as Active Assembly</button>
+              );
+            }
+            if (node?.type === 'file' && node.name.toLowerCase().endsWith('.hex')) {
+              return (
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                  onClick={async e => {
+                    e.stopPropagation();
+                    setContextMenu(null);
+            
+                    const asmFile = activeAsmFileId ? findFileNode(files, activeAsmFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.asm'));
+                    const isaFile = activeIsaFileId ? findFileNode(files, activeIsaFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
+            
+                    if (!asmFile || !isaFile) {
+                      setTerminalHistory(prev => [...prev, '❌ Active Assembly or ISA file missing.']);
+                      return;
+                    }
+                    
+                    try {
+                      const isaJson = JSON.parse(isaFile.content || '');
+                      console.log('Downloading with:', isaJson, asmFile.content);
+                      await downloadBinary(isaJson, asmFile.content || '');
+                      setTerminalHistory(prev => [...prev, `⬇️ Downloaded binary for ${asmFile.name}`]);
+                    } catch (err) {
+                      setTerminalHistory(prev => [...prev, `❌ Download failed: ${(err as Error).message}`]);
+                    }
+                  }}
+                >
+                  Download Binary File
+                </button>
               );
             }
             return null;

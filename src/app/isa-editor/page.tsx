@@ -72,6 +72,39 @@ interface DragState {
   draggedName: string;
 }
 
+function addOrUpdateFolder(root: FileNode[], newFolder: FileNode): FileNode[] {
+  const updated = [...root];
+  const index = updated.findIndex(node => node.name === newFolder.name && node.type === 'folder');
+
+  if (index !== -1) {
+    const existing = updated[index];
+    const existingChildren = existing.children || [];
+
+    // Merge or replace files in the folder
+    const newChildren = newFolder.children || [];
+    const mergedChildren = [...existingChildren];
+
+    for (const child of newChildren) {
+      const childIndex = mergedChildren.findIndex(c => c.name === child.name);
+      if (childIndex !== -1) {
+        mergedChildren[childIndex] = child; // Replace existing
+      } else {
+        mergedChildren.push(child); // Add new
+      }
+    }
+
+    updated[index] = {
+      ...existing,
+      children: mergedChildren
+    };
+  } else {
+    updated.push(newFolder); // Add as new folder
+  }
+
+  return updated;
+}
+
+
 export default function IsaEditor() {
   const router = useRouter();
   const [darkMode, setDarkMode] = useState<boolean>(false);
@@ -1178,6 +1211,25 @@ DATA:
         setOutput(
           `ISA: ${data.isa}\n\nAssembly:\n${data.assembly}\n\nMachine Code (hex):\n${data.machineCode}\n\nOutput:\n${data.stdout}`
         );
+        // ✅ Create the output file node
+        const outputFile: FileNode = {
+          id: 'output.hex',
+          name: 'output.hex',
+          type: 'file',
+          content: data.machineCode,
+          language: 'text'
+        };
+
+        // ✅ Create or update the output folder
+        const outputFolder: FileNode = {
+          id: 'output',
+          name: 'output',
+          type: 'folder',
+          children: [outputFile]
+        };
+
+        // ✅ Add or update in the tree
+        setFiles(prev => addOrUpdateFolder(prev, outputFolder));
       }
     } catch (e) {
       setTerminalHistory(prev => [...prev, 'Error: Failed to run.']);

@@ -131,6 +131,17 @@ const downloadBinary = async (
   window.URL.revokeObjectURL(url);
 };
 
+function formatHexByWordLength(hexString: string, wordLengthBits: number): string {
+  const wordLengthChars = wordLengthBits / 4; // 4 bits per hex digit
+  const chunks: string[] = [];
+
+  for (let i = 0; i < hexString.length; i += wordLengthChars) {
+    chunks.push(hexString.slice(i, i + wordLengthChars));
+  }
+
+  return chunks.join(' ');
+}
+
 export default function IsaEditor() {
   const router = useRouter();
   const [darkMode, setDarkMode] = useState<boolean>(false);
@@ -1237,6 +1248,8 @@ DATA:
         setOutput(
           `ISA: ${data.isa}\n\nAssembly:\n${data.assembly}\n\nMachine Code (hex):\n${data.machineCode}\n\nOutput:\n${data.stdout}`
         );
+        const formattedHex = formatHexByWordLength(data.machineCode, isaJson.wordSize || 16);
+
         const asmBaseName = asmFile.name.replace(/\.[^/.]+$/, '');
         const outputFileName = `${asmBaseName}_output.hex`;
 
@@ -1244,11 +1257,10 @@ DATA:
           id: outputFileName,
           name: outputFileName,
           type: 'file',
-          content: data.machineCode,
+          content: formattedHex,
           language: 'text'
         };
 
-        // ✅ Create or update the output folder
         const outputFolder: FileNode = {
           id: 'output',
           name: 'output',
@@ -1256,7 +1268,6 @@ DATA:
           children: [outputFile]
         };
 
-        // ✅ Add or update in the tree
         setFiles(prev => addOrUpdateFolder(prev, outputFolder));
       }
     } catch (e) {

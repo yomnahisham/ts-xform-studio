@@ -1181,79 +1181,203 @@ DATA:
     setIsValidating(false);
   };
 
-  const handleRun = async () => {
+
+  const handleAssemble = async (downloadBinary = false) => {
     setIsRunning(true);
+    setTerminalLoading(true);
+    
     try {
-      const isaFile = activeIsaFileId ? findFileNode(files, activeIsaFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
-      const asmFile = activeAsmFileId ? findFileNode(files, activeAsmFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.asm'));
+      // Find ISA and Assembly files
+      const isaFile = activeIsaFileId 
+        ? findFileNode(files, activeIsaFileId) 
+        : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
+      
+      const asmFile = activeAsmFileId 
+        ? findFileNode(files, activeAsmFileId) 
+        : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.asm'));
 
       if (!isaFile || !asmFile) {
-        setTerminalHistory(prev => [...prev, 'Error: Please ensure you have both a valid ISA JSON file and an Assembly (.asm) file.']);
-        setIsRunning(false);
-        return;
+        throw new Error('Please ensure you have both a valid ISA JSON file and an Assembly (.asm) file.');
       }
 
+      // Validate ISA JSON
       let isaJson;
       try {
         isaJson = JSON.parse(isaFile.content || '');
       } catch (e) {
-        setTerminalHistory(prev => [...prev, 'Error: ISA JSON is invalid.']);
-        setIsRunning(false);
-        return;
+        throw new Error('ISA JSON is invalid. Please check the JSON syntax.');
       }
 
-      const res = await fetch('/api/assemble', {
+      setTerminalHistory(prev => [...prev, `🔧 Assembling ${asmFile.name} with ISA ${isaFile.name}...`]);
+
+      // Make API call
+      const apiUrl = downloadBinary ? '/api/assemble?download=true' : '/api/assemble';
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isaDefinition: isaJson, assemblyCode: asmFile.content })
+        body: JSON.stringify({ 
+          isaDefinition: isaJson, 
+          assemblyCode: asmFile.content || '' 
+        })
       });
 
-      const data = await res.json();
       if (!res.ok) {
-        console.error('Assembly error:', data);
-        setTerminalHistory(prev => [...prev, `❌ Assembly failed: ${data.error}\n${data.details || ''}`]);
-        showToast('error', `Assembly failed: ${data.error}`);
-      } else {
-        setTerminalHistory(prev => [...prev, `✅ Assembly successful!\nMachine Code: ${data.machineCode}`]);
-        showToast('success', 'Assembly compiled successfully');
+        const errorData = await res.json();
+        throw new Error(`${errorData.error}${errorData.details ? `\n${errorData.details}` : ''}`);
+      }
+
+      if (downloadBinary) {
+        // Handle binary download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const baseName = asmFile.name.replace(/\.[^/.]+$/, '');
+        a.download = `${baseName}_output.bin`;
+        a.click();
+        window.URL.revokeObjectURL(url);
         
-        // Create output file
+        setTerminalHistory(prev => [...prev, `✅ Assembly successful! Downloaded: ${baseName}_output.bin`]);
+        showToast('success', 'Binary file downloaded successfully');
+      } else {
+        // Handle JSON response
+        const data = await res.json();
+        
+        setTerminalHistory(prev => [...prev, `✅ Assembly successful!`]);
+        setTerminalHistory(prev => [...prev, `📄 Machine Code: ${data.machineCode}`]);
+        
+        if (data.stdout) {
+          setTerminalHistory(prev => [...prev, `📋 Output: ${data.stdout}`]);
+        }
+
+        // Create output file with formatted hex
         const formattedHex = formatHexByWordLength(data.machineCode, isaJson.word_size || 16);
         const outputFile: FileNode = {
           id: `output-${Date.now()}`,
           name: `${asmFile.name.replace(/\.[^/.]+$/, '')}_output.hex`,
           type: 'file',
           content: formattedHex,
-          language: 'text'
+          language: 'text',
+          path: `/output/${asmFile.name.replace(/\.[^/.]+$/, '')}_output.hex`
         };
-        
-        // Add to output folder
+
+        // Add to output folder or create it
         const outputFolder: FileNode = {
           id: 'output',
           name: 'output',
           type: 'folder',
+          isOpen: true,
+          path: '/output',
           children: [outputFile]
         };
+
         setFiles(prev => addOrUpdateFolder(prev, outputFolder));
+        showToast('success', 'Assembly compiled successfully');
       }
+
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        setTerminalHistory(prev => [...prev, `❌ Download failed: ${errorMessage}`]);
-        showToast('error', `Download failed: ${errorMessage}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setTerminalHistory(prev => [...prev, `❌ Assembly failed: ${errorMessage}`]);
+      showToast('error', `Assembly failed: ${errorMessage}`);
+    } finally {
+      setIsRunning(false);
+      setTerminalLoading(false);
     }
-    setIsRunning(false);
   };
+
+  const handleDisassemble = async () => {
+    setIsRunning(true);
+    setTerminalLoading(true);
+    
+    try {
+      // Find ISA and Binary files
+      const isaFile = activeIsaFileId 
+        ? findFileNode(files, activeIsaFileId) 
+        : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
+      
+      // Simplified: just find the first binary/hex file
+      const binaryFile = findFirstFileRecursive(files, f => 
+        f.name.toLowerCase().endsWith('.bin') || 
+        f.name.toLowerCase().endsWith('.hex')
+      );
+
+      if (!isaFile || !binaryFile) {
+        throw new Error('Please ensure you have both a valid ISA JSON file and a Binary (.bin or .hex) file.');
+      }
+
+      // Validate ISA JSON
+      let isaJson;
+      try {
+        isaJson = JSON.parse(isaFile.content || '');
+      } catch (e) {
+        throw new Error('ISA JSON is invalid. Please check the JSON syntax.');
+      }
+
+      setTerminalHistory(prev => [...prev, `🔧 Disassembling ${binaryFile.name} with ISA ${isaFile.name}...`]);
+
+      // Make API call to disassemble endpoint
+      const res = await fetch('/api/disassemble', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          isaDefinition: isaJson, 
+          assembledCode: binaryFile.content || '' 
+        })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(`${errorData.error}${errorData.details ? `\n${errorData.details}` : ''}`);
+      }
+
+      // Handle JSON response
+      const data = await res.json();
+      
+      setTerminalHistory(prev => [...prev, `✅ Disassembly successful!`]);
+      setTerminalHistory(prev => [...prev, `📄 Assembly Code: ${data.disassembledCode}`]);
+      
+      if (data.message) {
+        setTerminalHistory(prev => [...prev, `📋 Info: ${data.message}`]);
+      }
+
+      // Create output file with disassembled code
+      const outputFile: FileNode = {
+        id: `disassembled-${Date.now()}`,
+        name: `${binaryFile.name.replace(/\.[^/.]+$/, '')}_disassembled.asm`,
+        type: 'file',
+        content: data.disassembledCode,
+        language: 'assembly',
+        path: `/output/${binaryFile.name.replace(/\.[^/.]+$/, '')}_disassembled.asm`
+      };
+
+      // Add to output folder or create it
+      const outputFolder: FileNode = {
+        id: 'output',
+        name: 'output',
+        type: 'folder',
+        isOpen: true,
+        path: '/output',
+        children: [outputFile]
+      };
+
+      setFiles(prev => addOrUpdateFolder(prev, outputFolder));
+      showToast('success', 'Disassembly completed successfully');
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setTerminalHistory(prev => [...prev, `❌ Disassembly failed: ${errorMessage}`]);
+      showToast('error', `Disassembly failed: ${errorMessage}`);
+    } finally {
+      setIsRunning(false);
+      setTerminalLoading(false);
+    }
+  }; 
+
+
 
 const downloadAllAsZip = async (forceCompile = false) => {
   try {
     const zip = new JSZip();
-    
-    const getContentType = (fileName: string): string => {
-      if (fileName.endsWith('.json')) return 'application/json';
-      if (fileName.endsWith('.asm')) return 'text/plain';
-      if (fileName.endsWith('.hex')) return 'text/plain';
-      return 'text/plain';
-    };
 
     const addFilesToZip = async (nodes: FileNode[], currentPath = '') => {
       for (const node of nodes) {
@@ -1488,12 +1612,21 @@ const downloadAllAsZip = async (forceCompile = false) => {
             >
               {isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             </button>
-            
+
             <button
-              onClick={handleRun}
+              onClick={() => handleAssemble()}
               disabled={isRunning}
               className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-              title="Compile Assembly"
+              title="Assemble"
+            >
+              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={() => handleDisassemble()}
+              disabled={isRunning}
+              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+              title="Disassemble"
             >
               {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             </button>

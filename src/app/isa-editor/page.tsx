@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import Image from 'next/image';
+import JSZip from 'jszip';
 
 interface FileNode {
   id: string;
@@ -585,11 +586,6 @@ DATA:
     }
   };
 
-  const handleNewFile = () => {
-    setCreatingFile({ placeholder: 'untitled.txt' });
-    setNewFileName('untitled.txt');
-  };
-
   const handleNewFolder = () => {
     const newId = `folder-${Date.now()}`;
     const newFolder: FileNode = {
@@ -606,12 +602,12 @@ DATA:
     setNewFileName('New Folder');
   };
 
-  const handleCreateFile = (parentId?: string) => {
+  const handleNewFile = (parentId?: string) => {
     setCreatingFile({ parentId, placeholder: 'untitled.txt' });
     setNewFileName('untitled.txt');
   };
 
-  const handleCreateFileConfirm = () => {
+  const handleNewFileConfirm = () => {
     if (!creatingFile || !newFileName.trim()) return;
     
     const fileName = newFileName.trim();
@@ -669,36 +665,6 @@ DATA:
     }
   };
 
-  const handleSaveAs = () => {
-    const currentTab = getCurrentTab();
-    if (!currentTab) return;
-    
-    const newName = prompt('Enter new file name:', currentTab.name);
-    if (!newName) return;
-    
-    const newId = `file-${Date.now()}`;
-    const newTab: Tab = {
-      id: newId,
-      name: newName,
-      content: currentTab.content,
-      language: getLanguageFromFileName(newName),
-      isDirty: false,
-      fileId: newId
-    };
-    
-    const newFile: FileNode = {
-      id: newId,
-      name: newName,
-      type: 'file',
-      path: `/${newName}`,
-      content: currentTab.content,
-      language: getLanguageFromFileName(newName)
-    };
-    
-    setFiles(prev => [...prev, newFile]);
-    setTabs(prev => [...prev, newTab]);
-    setActiveTab(newId);
-  };
 
   const handleDeleteFile = (fileId: string) => {
     const file = findFileNode(files, fileId);
@@ -1218,15 +1184,15 @@ DATA:
   const handleRun = async () => {
     setIsRunning(true);
     try {
-      // Recursively find the first ISA JSON file and first assembly file (case-insensitive)
       const isaFile = activeIsaFileId ? findFileNode(files, activeIsaFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
       const asmFile = activeAsmFileId ? findFileNode(files, activeAsmFileId) : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.asm'));
+
       if (!isaFile || !asmFile) {
         setTerminalHistory(prev => [...prev, 'Error: Please ensure you have both a valid ISA JSON file and an Assembly (.asm) file.']);
         setIsRunning(false);
         return;
       }
-      // Validate ISA JSON
+
       let isaJson;
       try {
         isaJson = JSON.parse(isaFile.content || '');
@@ -1235,46 +1201,171 @@ DATA:
         setIsRunning(false);
         return;
       }
-      // Call the backend
-      const res = await fetch('/api/assemble/', {
+
+      const res = await fetch('/api/assemble', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isaDefinition: isaJson, assemblyCode: asmFile.content })
       });
+
       const data = await res.json();
       if (!res.ok) {
-        setTerminalHistory(prev => [...prev, `Error: ${data.error || 'Unknown error'}\n${data.details || ''}`]);
+        console.error('Assembly error:', data);
+        setTerminalHistory(prev => [...prev, `❌ Assembly failed: ${data.error}\n${data.details || ''}`]);
+        showToast('error', `Assembly failed: ${data.error}`);
       } else {
-        setOutput(
-          `ISA: ${data.isa}\n\nAssembly:\n${data.assembly}\n\nMachine Code (hex):\n${data.machineCode}\n\nOutput:\n${data.stdout}`
-        );
-        const formattedHex = formatHexByWordLength(data.machineCode, isaJson.wordSize || 16);
-
-        const asmBaseName = asmFile.name.replace(/\.[^/.]+$/, '');
-        const outputFileName = `${asmBaseName}_output.hex`;
-
+        setTerminalHistory(prev => [...prev, `✅ Assembly successful!\nMachine Code: ${data.machineCode}`]);
+        showToast('success', 'Assembly compiled successfully');
+        
+        // Create output file
+        const formattedHex = formatHexByWordLength(data.machineCode, isaJson.word_size || 16);
         const outputFile: FileNode = {
-          id: outputFileName,
-          name: outputFileName,
+          id: `output-${Date.now()}`,
+          name: `${asmFile.name.replace(/\.[^/.]+$/, '')}_output.hex`,
           type: 'file',
           content: formattedHex,
           language: 'text'
         };
-
+        
+        // Add to output folder
         const outputFolder: FileNode = {
           id: 'output',
           name: 'output',
           type: 'folder',
           children: [outputFile]
         };
-
         setFiles(prev => addOrUpdateFolder(prev, outputFolder));
       }
-    } catch (e) {
-      setTerminalHistory(prev => [...prev, 'Error: Failed to run.']);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        setTerminalHistory(prev => [...prev, `❌ Download failed: ${errorMessage}`]);
+        showToast('error', `Download failed: ${errorMessage}`);
     }
     setIsRunning(false);
   };
+
+const downloadAllAsZip = async (forceCompile = false) => {
+  try {
+    const zip = new JSZip();
+    
+    const getContentType = (fileName: string): string => {
+      if (fileName.endsWith('.json')) return 'application/json';
+      if (fileName.endsWith('.asm')) return 'text/plain';
+      if (fileName.endsWith('.hex')) return 'text/plain';
+      return 'text/plain';
+    };
+
+    const addFilesToZip = async (nodes: FileNode[], currentPath = '') => {
+      for (const node of nodes) {
+        if (node.type === 'file') {
+          const filePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+          
+          if (forceCompile && node.name.toLowerCase().endsWith('.asm')) {
+            // For assembly files, compile to binary if forceCompile is true
+            try {
+              const isaFile = findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
+              
+              if (isaFile) {
+                const isaJson = JSON.parse(isaFile.content || '');
+                
+                const res = await fetch('/api/assemble?download=true', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ isaDefinition: isaJson, assemblyCode: node.content })
+                });
+                
+                if (res.ok) {
+                  const blob = await res.blob();
+                  const arrayBuffer = await blob.arrayBuffer();
+                  const baseName = node.name.replace(/\.[^/.]+$/, '');
+                  const binaryPath = currentPath ? `${currentPath}/${baseName}_output.bin` : `${baseName}_output.bin`;
+                  
+                  // Add compiled binary to zip
+                  zip.file(binaryPath, arrayBuffer, { binary: true });
+                  setTerminalHistory(prev => [...prev, `✅ Compiled and added: ${binaryPath}`]);
+                } else {
+                  const errorData = await res.json();
+                  setTerminalHistory(prev => [...prev, `❌ Failed to compile ${node.name}: ${errorData.error}`]);
+                  // Still add the original source file
+                  zip.file(filePath, node.content || '', { 
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                  });
+                }
+              } else {
+                setTerminalHistory(prev => [...prev, `⚠️ No ISA file found for compiling ${node.name}`]);
+                // Add original source file
+                zip.file(filePath, node.content || '', { 
+                  compression: 'DEFLATE',
+                  compressionOptions: { level: 6 }
+                });
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+              setTerminalHistory(prev => [...prev, `❌ Compilation error for ${node.name}: ${errorMessage}`]);
+              // Add original source file as fallback
+              zip.file(filePath, node.content || '', { 
+                compression: 'DEFLATE',
+                compressionOptions: { level: 6 }
+              });
+            }
+          } else {
+            // Add regular file
+            zip.file(filePath, node.content || '', { 
+              compression: 'DEFLATE',
+              compressionOptions: { level: 6 }
+            });
+          }
+        } else if (node.type === 'folder' && node.children) {
+          // Create folder structure and recursively add children
+          const folderPath = currentPath ? `${currentPath}/${node.name}` : node.name;
+          
+          // Create empty folder if it has no children
+          if (node.children.length === 0) {
+            zip.folder(folderPath);
+          } else {
+            // Recursively add children
+            await addFilesToZip(node.children, folderPath);
+          }
+        }
+      }
+    };
+
+    // Add all files to zip with folder structure
+    setTerminalHistory(prev => [...prev, '📦 Building zip file...']);
+    await addFilesToZip(files);
+
+    // Generate and download the zip file
+    setTerminalHistory(prev => [...prev, '📦 Generating zip file...']);
+    
+    const zipBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 }
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'project_files.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    setTerminalHistory(prev => [...prev, `✅ Downloaded project as zip: project_files.zip`]);
+    showToast('success', 'Project downloaded as zip successfully');
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    setTerminalHistory(prev => [...prev, `❌ Zip download failed: ${errorMessage}`]);
+    showToast('error', `Zip download failed: ${errorMessage}`);
+  }
+};
+
+
+
 
   const isDescendant = (potentialChildId: string, potentialParentId: string): boolean => {
     const parent = findFileNode(files, potentialParentId);
@@ -1370,21 +1461,6 @@ DATA:
 
           {/* Right */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={handleNewFile}
-              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-              title="New File (Ctrl+N)"
-            >
-              <FilePlus className="w-4 h-4" />
-            </button>
-            
-            <button
-              onClick={handleUploadClick}
-              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-              title="Open File (Ctrl+O)"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
             
             <button
               onClick={() => setShowExamples(true)}
@@ -1405,14 +1481,6 @@ DATA:
             </button>
 
             <button
-              onClick={handleSaveAs}
-              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-              title="Save As"
-            >
-              <Edit3 className="w-4 h-4" />
-            </button>
-
-            <button
               onClick={handleValidate}
               className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
               title="Validate ISA"
@@ -1420,14 +1488,14 @@ DATA:
             >
               {isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             </button>
-
+            
             <button
               onClick={handleRun}
-              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-              title="Run Assembly"
               disabled={isRunning}
+              className="p-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+              title="Compile Assembly"
             >
-              <Play className="w-4 h-4" />
+              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
             </button>
 
             <div className="w-px h-4 bg-[#e0e0e0] mx-1"></div>
@@ -1471,19 +1539,39 @@ DATA:
             <div className={`p-3 border-b ${darkMode ? 'border-[#3e3e42]' : 'border-[#e0e0e0]'} flex items-center justify-between`}>
               <h3 className={`text-sm font-medium ${darkMode ? 'text-[#cccccc]' : 'text-gray-700'}`}>EXPLORER</h3>
               <div className="flex items-center gap-1">
+
+                <button
+                  onClick={() =>downloadAllAsZip()}
+                  className={`p-1 ${darkMode ? 'hover:bg-[#3e3e42]' : 'hover:bg-gray-100'} rounded`}
+                  title="Download All Files"
+                >
+                  <Download className="w-3 h-3" />
+                </button>
+
+                
+                <button
+                  onClick={handleUploadClick}
+                  className={`p-1 ${darkMode ? 'hover:bg-[#3e3e42]' : 'hover:bg-gray-100'} rounded`}
+                  title="Open File"
+                >
+                  <Upload className="w-3 h-3" />
+                </button>
+                
+                <button 
+                  onClick={() => handleNewFile()}
+                  className={`p-1 ${darkMode ? 'hover:bg-[#3e3e42]' : 'hover:bg-gray-100'} rounded`}
+                  title="New File"
+                >
+                  <FilePlus className="w-3 h-3" />
+
+                </button>
+                
                 <button 
                   onClick={handleNewFolder}
                   className={`p-1 ${darkMode ? 'hover:bg-[#3e3e42]' : 'hover:bg-gray-100'} rounded`}
                   title="New Folder"
                 >
                   <FolderPlus className="w-3 h-3" />
-                </button>
-                <button 
-                  onClick={() => handleCreateFile()}
-                  className={`p-1 ${darkMode ? 'hover:bg-[#3e3e42]' : 'hover:bg-gray-100'} rounded`}
-                  title="New File"
-                >
-                  <FilePlus className="w-3 h-3" />
                 </button>
               </div>
             </div>
@@ -1533,10 +1621,10 @@ DATA:
                       type="text"
                       value={newFileName}
                       onChange={(e) => setNewFileName(e.target.value)}
-                      onBlur={handleCreateFileConfirm}
+                      onBlur={handleNewFileConfirm}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          handleCreateFileConfirm();
+                          handleNewFileConfirm();
                         } else if (e.key === 'Escape') {
                           setCreatingFile(null);
                           setNewFileName('');

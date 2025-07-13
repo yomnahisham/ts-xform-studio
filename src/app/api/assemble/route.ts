@@ -60,13 +60,13 @@ from isa_xform.core.parser import Parser
 from isa_xform.core.assembler import Assembler
 
 try:
-    # Load ISA from file
+    # Load ISA from file - use raw strings for cross-platform compatibility
     loader = ISALoader()
-    isa_definition = loader.load_isa_from_file('${isaFile}')
+    isa_definition = loader.load_isa_from_file(r'${isaFile}')
     
     # Parse assembly
     parser = Parser(isa_definition)
-    with open('${assemblyFile}', 'r') as f:
+    with open(r'${assemblyFile}', 'r') as f:
         source = f.read()
     nodes = parser.parse(source)
     
@@ -76,20 +76,16 @@ try:
     
     # Handle different return types from assemble()
     if hasattr(assembled_result, 'machine_code'):
-        # If it's an AssembledCode object with machine_code attribute
         machine_code = assembled_result.machine_code
     elif hasattr(assembled_result, 'bytes'):
-        # If it's an AssembledCode object with bytes attribute
         machine_code = assembled_result.bytes
     elif isinstance(assembled_result, bytes):
-        # If it's already bytes
         machine_code = assembled_result
     else:
-        # Try to convert to bytes
         machine_code = bytes(assembled_result)
     
     # Write output
-    with open('${outputFile}', 'wb') as f:
+    with open(r'${outputFile}', 'wb') as f:
         f.write(machine_code)
     
     print("Assembly successful")
@@ -100,8 +96,8 @@ except Exception as e:
 `;
       
       writeFileSync(pythonFile, pythonScript);
-      
-      const command = `python3 ${pythonFile}`;
+      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
+      const command = `${pythonCommand} ${pythonFile}`;
       console.log('Running Python script:', pythonFile);
       console.log('Before exec, isaFile exists:', fs.existsSync(isaFile));
       console.log('Before exec, assemblyFile exists:', fs.existsSync(assemblyFile));
@@ -128,7 +124,7 @@ except Exception as e:
         return new NextResponse(machineCode, {
           status: 200,
           headers: {
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': 'application/octet-stream', 
             'Content-Disposition': 'attachment; filename="output.bin"',
           },
         });

@@ -104,7 +104,11 @@ function addOrUpdateFolder(root: FileNode[], newFolder: FileNode): FileNode[] {
   return updated;
 }
 
-const downloadBinary = async (isaDefinition: any, assemblyCode: string) => {
+const downloadBinary = async (
+  isaDefinition: any,
+  assemblyCode: string,
+  asmFileName: string
+) => {
   const res = await fetch('/api/assemble?download=true', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -119,7 +123,10 @@ const downloadBinary = async (isaDefinition: any, assemblyCode: string) => {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'output.bin';
+
+  const baseName = asmFileName.replace(/\.[^/.]+$/, '');
+  a.download = `${baseName}_output.bin`;
+
   a.click();
   window.URL.revokeObjectURL(url);
 };
@@ -1230,10 +1237,12 @@ DATA:
         setOutput(
           `ISA: ${data.isa}\n\nAssembly:\n${data.assembly}\n\nMachine Code (hex):\n${data.machineCode}\n\nOutput:\n${data.stdout}`
         );
-        // ✅ Create the output file node
+        const asmBaseName = asmFile.name.replace(/\.[^/.]+$/, '');
+        const outputFileName = `${asmBaseName}_output.hex`;
+
         const outputFile: FileNode = {
-          id: 'output.hex',
-          name: 'output.hex',
+          id: outputFileName,
+          name: outputFileName,
           type: 'file',
           content: data.machineCode,
           language: 'text'
@@ -1249,8 +1258,6 @@ DATA:
 
         // ✅ Add or update in the tree
         setFiles(prev => addOrUpdateFolder(prev, outputFolder));
-
-        await downloadBinary(isaJson, asmFile.content || '');
       }
     } catch (e) {
       setTerminalHistory(prev => [...prev, 'Error: Failed to run.']);
@@ -1854,7 +1861,7 @@ DATA:
                     try {
                       const isaJson = JSON.parse(isaFile.content || '');
                       console.log('Downloading with:', isaJson, asmFile.content);
-                      await downloadBinary(isaJson, asmFile.content || '');
+                      await downloadBinary(isaJson, asmFile.content || '', asmFile.name || '');
                       setTerminalHistory(prev => [...prev, `⬇️ Downloaded binary for ${asmFile.name}`]);
                     } catch (err) {
                       setTerminalHistory(prev => [...prev, `❌ Download failed: ${(err as Error).message}`]);

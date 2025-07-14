@@ -1822,52 +1822,89 @@ const downloadAllAsZip = async (forceCompile = false) => {
             </div>
 
             {/* Editor */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {getCurrentTab() && (
-                <Editor
-                  height="100%"
-                  defaultLanguage={getCurrentTab()?.language || 'text'}
-                  value={getCurrentTab()?.content || ''}
-                  onChange={handleTabChange}
-                  options={{
-                    readOnly: false,
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: 'on',
-                    roundedSelection: false,
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    theme: darkMode ? 'vs-dark' : 'vs',
-                    wordWrap: 'on',
-                    folding: true,
-                    lineDecorationsWidth: 10,
-                    lineNumbersMinChars: 3,
-                    glyphMargin: false,
-                    overviewRulerBorder: false,
-                    hideCursorInOverviewRuler: true,
-                    overviewRulerLanes: 0,
-                    scrollbar: {
-                      vertical: 'visible',
-                      horizontal: 'visible',
-                      verticalScrollbarSize: 8,
-                      horizontalScrollbarSize: 8,
-                    },
-                    renderWhitespace: 'none',
-                    renderLineHighlight: 'all',
-                    selectOnLineNumbers: true,
-                    contextmenu: true,
-                    quickSuggestions: true,
-                    suggestOnTriggerCharacters: true,
-                    acceptSuggestionOnEnter: 'on',
-                    tabCompletion: 'on',
-                    bracketPairColorization: { enabled: true },
-                    guides: {
-                      bracketPairs: true,
-                      indentation: true,
-                    },
+            <div className="flex flex-col min-h-0 flex-1">
+              {/* Copy/Paste Buttons */}
+              <div className="flex gap-2 p-2 border-b border-gray-200 bg-gray-50">
+                <button
+                  className="px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-semibold hover:bg-blue-200"
+                  onClick={async () => {
+                    const content = getCurrentTab()?.content || '';
+                    try {
+                      await navigator.clipboard.writeText(content);
+                      showToast('success', 'Copied to clipboard');
+                    } catch {
+                      showToast('error', 'Failed to copy');
+                    }
                   }}
-                />
-              )}
+                  title="Copy all (Ctrl+C works too)"
+                  type="button"
+                >
+                  Copy
+                </button>
+                <button
+                  className="px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-semibold hover:bg-blue-200"
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      handleTabChange((getCurrentTab()?.content || '') + text);
+                      showToast('success', 'Pasted from clipboard');
+                    } catch {
+                      showToast('error', 'Failed to paste');
+                    }
+                  }}
+                  title="Paste from clipboard (Ctrl+V works too)"
+                  type="button"
+                >
+                  Paste
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {getCurrentTab() && (
+                  <Editor
+                    height="100%"
+                    defaultLanguage={getCurrentTab()?.language || 'text'}
+                    value={getCurrentTab()?.content || ''}
+                    onChange={handleTabChange}
+                    options={{
+                      readOnly: false,
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineNumbers: 'on',
+                      roundedSelection: false,
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      theme: darkMode ? 'vs-dark' : 'vs',
+                      wordWrap: 'on',
+                      folding: true,
+                      lineDecorationsWidth: 10,
+                      lineNumbersMinChars: 3,
+                      glyphMargin: false,
+                      overviewRulerBorder: false,
+                      hideCursorInOverviewRuler: true,
+                      overviewRulerLanes: 0,
+                      scrollbar: {
+                        vertical: 'visible',
+                        horizontal: 'visible',
+                        verticalScrollbarSize: 8,
+                        horizontalScrollbarSize: 8,
+                      },
+                      renderWhitespace: 'none',
+                      renderLineHighlight: 'all',
+                      selectOnLineNumbers: true,
+                      contextmenu: true,
+                      quickSuggestions: true,
+                      suggestOnTriggerCharacters: true,
+                      acceptSuggestionOnEnter: 'on',
+                      tabCompletion: 'on',
+                      bracketPairColorization: { enabled: true },
+                      guides: {
+                        bracketPairs: true,
+                        indentation: true,
+                      },
+                    }}
+                  />
+                )}
+              </div>
             </div>
           </div>
 

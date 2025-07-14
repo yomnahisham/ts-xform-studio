@@ -29,24 +29,48 @@ export async function POST(request: NextRequest) {
       writeFileSync(isaFile, JSON.stringify(isaDefinition, null, 2));
       writeFileSync(assemblyFile, assemblyCode);
 
-      // Validate ISA definition using Python
+      // Check if we're using a built-in ISA name or a custom ISA definition
       const pythonPath = path.join(process.cwd(), '.venv', 'bin', 'python');
+      let isaName = 'custom';
       
       try {
-        const { stdout: validateStdout, stderr: validateStderr } = await execAsync(
-          `${pythonPath} -c "import sys; sys.path.append('${process.cwd()}'); from isa_xform import ISALoader; import json; loader = ISALoader(); result = loader.load_isa_from_file('${isaFile}'); print('VALID')"`,
-          { timeout: 10000, cwd: tempDir }
-        );
-        
-        if (validateStdout.trim() !== 'VALID') {
-          return NextResponse.json(
-            {
-              error: 'Invalid ISA definition',
-              details: validateStderr || validateStdout,
-              isaName: isaDefinition.name || 'Unknown'
-            },
-            { status: 400 }
+        // If isaDefinition is a string, treat it as a built-in ISA name
+        if (typeof isaDefinition === 'string') {
+          isaName = isaDefinition;
+          // Validate that the built-in ISA exists
+          const { stdout: validateStdout, stderr: validateStderr } = await execAsync(
+            `${pythonPath} -c "import sys; sys.path.append('${process.cwd()}'); from isa_xform import ISALoader; loader = ISALoader(); result = loader.load_isa('${isaName}'); print('VALID')"`,
+            { timeout: 10000, cwd: tempDir }
           );
+          
+          if (validateStdout.trim() !== 'VALID') {
+            return NextResponse.json(
+              {
+                error: 'Invalid built-in ISA name',
+                details: validateStderr || validateStdout,
+                isaName: isaName
+              },
+              { status: 400 }
+            );
+          }
+        } else {
+          // Validate custom ISA definition using Python
+          const { stdout: validateStdout, stderr: validateStderr } = await execAsync(
+            `${pythonPath} -c "import sys; sys.path.append('${process.cwd()}'); from isa_xform import ISALoader; import json; loader = ISALoader(); result = loader.load_isa_from_file('${isaFile}'); print('VALID')"`,
+            { timeout: 10000, cwd: tempDir }
+          );
+          
+          if (validateStdout.trim() !== 'VALID') {
+            return NextResponse.json(
+              {
+                error: 'Invalid ISA definition',
+                details: validateStderr || validateStdout,
+                isaName: isaDefinition.name || 'Unknown'
+              },
+              { status: 400 }
+            );
+          }
+          isaName = isaDefinition.name || 'Unknown';
         }
       } catch (validateError) {
         console.error('ISA validation error:', validateError);
@@ -54,7 +78,7 @@ export async function POST(request: NextRequest) {
           {
             error: 'ISA validation failed',
             details: validateError instanceof Error ? validateError.message : 'Unknown validation error',
-            isaName: isaDefinition.name || 'Unknown'
+            isaName: isaName
           },
           { status: 400 }
         );
@@ -62,6 +86,12 @@ export async function POST(request: NextRequest) {
 
       // Create Python script file for assembly
       assembleScriptFile = path.join(tempDir, `assemble_${Date.now()}.py`);
+      
+      // Determine how to load the ISA based on whether it's built-in or custom
+      const isaLoadCode = typeof isaDefinition === 'string' 
+        ? `isa = loader.load_isa('${isaName}')`
+        : `isa = loader.load_isa_from_file('${isaFile}')`;
+        
       const assembleScript = `import sys
 sys.path.append('${process.cwd()}')
 from isa_xform import ISALoader, Parser
@@ -70,7 +100,7 @@ import json
 
 # Load ISA
 loader = ISALoader()
-isa = loader.load_isa_from_file('${isaFile}')
+${isaLoadCode}
 
 # Create parser and assembler
 parser = Parser(isa)
@@ -91,29 +121,88 @@ if assembler.context.section_data['text'] == b'\\x00\\x00':
         print("WARNING: Assembler produced 0x0000 for ADD instruction, this may be a bug")
         # For now, we'll use the result as-is since the disassembler can handle it
 
-# Convert machine code to hex string
-machine_code_hex = result.machine_code.hex()
+# Try to get the actual machine code from the assembler context
+# The result.machine_code might be a binary format, so let's try to get raw bytes
+try:
+    # Try to get raw machine code from context
+    if hasattr(assembler, 'context') and hasattr(assembler.context, 'section_data'):
+        raw_machine_code = assembler.context.section_data.get('text', b'')
+        if raw_machine_code:
+            machine_code_hex = raw_machine_code.hex()
+        else:
+            machine_code_hex = result.machine_code.hex()
+    else:
+        machine_code_hex = result.machine_code.hex()
+except Exception as e:
+    print(f"Error getting machine code: {e}")
+    machine_code_hex = result.machine_code.hex()
 
-# Get symbol table info
+# Get symbol table info - handle the case where symbols might not have address attribute
 symbol_table_info = {}
 if result.symbol_table and hasattr(result.symbol_table, 'symbols'):
     for name, symbol in result.symbol_table.symbols.items():
-        symbol_table_info[name] = {
-            'address': symbol.address,
-            'type': symbol.type
-        }
+        symbol_info = {}
+        # Handle symbol type - convert enum to string if needed
+        try:
+            symbol_type = getattr(symbol, 'type', 'unknown')
+            if hasattr(symbol_type, 'name'):
+                symbol_info['type'] = symbol_type.name
+            elif hasattr(symbol_type, 'value'):
+                symbol_info['type'] = symbol_type.value
+            else:
+                symbol_info['type'] = str(symbol_type)
+        except:
+            symbol_info['type'] = 'unknown'
+        
+        # Try to get address, but handle case where it doesn't exist
+        try:
+            symbol_info['address'] = symbol.address
+        except AttributeError:
+            symbol_info['address'] = None
+        symbol_table_info[name] = symbol_info
+
+# Convert errors and warnings to strings for JSON serialization
+errors = []
+if result.errors:
+    for error in result.errors:
+        if hasattr(error, 'message'):
+            errors.append(str(error.message))
+        else:
+            errors.append(str(error))
+
+warnings = []
+if result.warnings:
+    for warning in result.warnings:
+        if hasattr(warning, 'message'):
+            warnings.append(str(warning.message))
+        else:
+            warnings.append(str(warning))
 
 # Write output
 output_data = {
     'machineCode': machine_code_hex,
     'symbolTable': symbol_table_info,
-    'errors': result.errors,
-    'warnings': result.warnings,
+    'errors': errors,
+    'warnings': warnings,
     'success': result.success
 }
 
+# Ensure all data is JSON serializable
+def make_json_serializable(obj):
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(item) for item in obj]
+    elif hasattr(obj, '__dict__'):
+        return str(obj)
+    else:
+        return obj
+
+# Clean the output data
+cleaned_output = make_json_serializable(output_data)
+
 with open('${outputFile}', 'w') as f:
-    json.dump(output_data, f, indent=2)
+    json.dump(cleaned_output, f, indent=2)
 
 print("SUCCESS")`;
 

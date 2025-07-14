@@ -1,949 +1,1400 @@
 {
-    "name": "ZX16",
-    "version": "1.0",
-    "description": "ZX16 16-bit RISC-V inspired ISA",
+  "name": "ZX16",
+  "version": "1.1",
+  "description": "ZX16 16-bit RISC ISA (updated to spec)",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32,
+    "default_data_start": 32768,
+    "default_stack_start": 61438,
+    "memory_layout": {
+      "interrupt_vectors": {"start": 0, "end": 30},
+      "code_section": {"start": 32, "end": 61439},
+      "data_section": {"start": 32768, "end": 61437},
+      "stack_section": {"start": 61438, "end": 61438},
+      "mmio": {"start": 61440, "end": 65535}
+    }
+  },
+  "pc_behavior": {
+    "points_to": "next_instruction",
+    "offset_for_jumps": 0,
+    "jump_offset_calculation": "target_minus_pc",
+    "disassembly": {
+      "jump_target_calculation": "pc_plus_offset",
+      "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+    }
+  },
+  "instruction_architecture": {
     "instruction_size": 16,
-    "word_size": 16,
-    "endianness": "little",
-    "address_space": {
-      "size": 65536,
-      "default_code_start": 32
+    "instruction_size_bytes": 2,
+    "variable_length": false,
+    "alignment": 2,
+    "max_instruction_length": 16,
+    "address_bits": 16,
+    "address_mask": "0xFFFF",
+    "pc_increment": 2,
+    "immediate_widths": {
+      "i_type": 7,
+      "branch": 5,
+      "jump": 13,
+      "load_store": 6
     },
-    "registers": {
-      "general_purpose": [
-        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
-        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
-        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
-        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
-        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
-        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
-        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
-        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
-      ]
+    "shift_config": {
+      "type_width": 3,
+      "amount_width": 4
     },
-    "instructions": [
-      {
-        "mnemonic": "ADD",
-        "format": "R-type",
-        "description": "Add registers (two-operand)",
-        "syntax": "ADD rd, rs2",
-        "semantics": "rd = rd + rs2",
-        "implementation": "# Add instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', (rd_val + rs2_val) > 0xFFFF)\nset_flag('V', ((rd_val & 0x8000) == (rs2_val & 0x8000)) and ((result & 0x8000) != (rd_val & 0x8000)))",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0000"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SUB",
-        "format": "R-type",
-        "description": "Subtract registers (two-operand)",
-        "syntax": "SUB rd, rs2",
-        "semantics": "rd = rd - rs2",
-        "implementation": "# Subtract instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', rd_val >= rs2_val)\nset_flag('V', ((rd_val & 0x8000) != (rs2_val & 0x8000)) and ((result & 0x8000) == (rs2_val & 0x8000)))",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0001"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLT",
-        "format": "R-type",
-        "description": "Set if less than (signed)",
-        "syntax": "SLT rd, rs2",
-        "semantics": "rd = (rd < rs2) ? 1 : 0",
-        "implementation": "# Set if less than (signed) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nresult = 1 if rd_signed < rs2_signed else 0\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0010"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "001"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLTU",
-        "format": "R-type",
-        "description": "Set if less than (unsigned)",
-        "syntax": "SLTU rd, rs2",
-        "semantics": "rd = (unsigned rd < unsigned rs2) ? 1 : 0",
-        "implementation": "# Set if less than (unsigned) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rd_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0011"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "010"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLL",
-        "format": "R-type",
-        "description": "Shift left logical",
-        "syntax": "SLL rd, rs2",
-        "semantics": "rd = rd << (rs2 & 0xF)",
-        "implementation": "# Shift left logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0100"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SRL",
-        "format": "R-type",
-        "description": "Shift right logical",
-        "syntax": "SRL rd, rs2",
-        "semantics": "rd = rd >> (rs2 & 0xF)",
-        "implementation": "# Shift right logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0101"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SRA",
-        "format": "R-type",
-        "description": "Shift right arithmetic",
-        "syntax": "SRA rd, rs2",
-        "semantics": "rd = rd >> (rs2 & 0xF)",
-        "implementation": "# Shift right arithmetic implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0110"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "OR",
-        "format": "R-type",
-        "description": "Bitwise OR",
-        "syntax": "OR rd, rs2",
-        "semantics": "rd = rd | rs2",
-        "implementation": "# Bitwise OR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val | rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "0111"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "100"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "AND",
-        "format": "R-type",
-        "description": "Bitwise AND",
-        "syntax": "AND rd, rs2",
-        "semantics": "rd = rd & rs2",
-        "implementation": "# Bitwise AND implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val & rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "1000"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "101"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "XOR",
-        "format": "R-type",
-        "description": "Bitwise XOR",
-        "syntax": "XOR rd, rs2",
-        "semantics": "rd = rd ^ rs2",
-        "implementation": "# Bitwise XOR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val ^ rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "1001"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "110"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "MV",
-        "format": "R-type",
-        "description": "Move register",
-        "syntax": "MV rd, rs2",
-        "semantics": "rd = rs2",
-        "implementation": "# Move register implementation\nrs2_val = read_register(operands['rs2'])\nwrite_register(operands['rd'], rs2_val)",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "1010"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "111"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "JR",
-        "format": "R-type",
-        "description": "Jump register",
-        "syntax": "JR rd",
-        "semantics": "PC = rd",
-        "implementation": "# Jump register implementation\nrd_val = read_register(operands['rd'])\n# Set PC to register value\ncontext.pc = rd_val & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "1011"},
-            {"name": "rs2", "bits": "11:9", "value": "000"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "JALR",
-        "format": "R-type",
-        "description": "Jump and link register",
-        "syntax": "JALR rd, rs2",
-        "semantics": "rd = PC + 2; PC = rs2",
-        "implementation": "# Jump and link register implementation\nrs2_val = read_register(operands['rs2'])\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Set PC to register value\ncontext.pc = rs2_val & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "funct4", "bits": "15:12", "value": "1100"},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "000"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "ADDI",
-        "format": "I-type",
-        "description": "Add immediate",
-        "syntax": "ADDI rd, imm",
-        "semantics": "rd = rd + sign_extend(imm)",
-        "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + imm_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLTI",
-        "format": "I-type",
-        "description": "Set if less than immediate (signed)",
-        "syntax": "SLTI rd, imm",
-        "semantics": "rd = (rd < sign_extend(imm)) ? 1 : 0",
-        "implementation": "# Set if less than immediate (signed) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nimm_signed = imm_val if (imm_val & 0x8000) == 0 else imm_val - 0x10000\nresult = 1 if rd_signed < imm_signed else 0\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "001"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLTUI",
-        "format": "I-type",
-        "description": "Set if less than immediate (unsigned)",
-        "syntax": "SLTUI rd, imm",
-        "semantics": "rd = (unsigned rd < unsigned sign_extend(imm)) ? 1 : 0",
-        "implementation": "# Set if less than immediate (unsigned) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Treat as unsigned comparison\nresult = 1 if rd_val < (imm_val & 0xFFFF) else 0\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "010"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SLLI",
-        "format": "I-type",
-        "description": "Shift left logical immediate",
-        "syntax": "SLLI rd, imm",
-        "semantics": "rd = rd << imm[3:0]",
-        "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SRLI",
-        "format": "I-type",
-        "description": "Shift right logical immediate",
-        "syntax": "SRLI rd, imm",
-        "semantics": "rd = rd >> imm[3:0]",
-        "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SRAI",
-        "format": "I-type",
-        "description": "Shift right arithmetic immediate",
-        "syntax": "SRAI rd, imm",
-        "semantics": "rd = rd >> imm[3:0]",
-        "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "ORI",
-        "format": "I-type",
-        "description": "OR immediate",
-        "syntax": "ORI rd, imm",
-        "semantics": "rd = rd | sign_extend(imm)",
-        "implementation": "# OR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val | (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "100"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "ANDI",
-        "format": "I-type",
-        "description": "AND immediate",
-        "syntax": "ANDI rd, imm",
-        "semantics": "rd = rd & sign_extend(imm)",
-        "implementation": "# AND immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val & (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "101"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "XORI",
-        "format": "I-type",
-        "description": "XOR immediate",
-        "syntax": "XORI rd, imm",
-        "semantics": "rd = rd ^ sign_extend(imm)",
-        "implementation": "# XOR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val ^ (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "110"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "LI",
-        "format": "I-type",
-        "description": "Load immediate",
-        "syntax": "LI rd, imm",
-        "semantics": "rd = sign_extend(imm)",
-        "implementation": "# Load immediate implementation\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = imm_val & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "111"},
-            {"name": "opcode", "bits": "2:0", "value": "001"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "BEQ",
-        "format": "B-type",
-        "description": "Branch if equal",
-        "syntax": "BEQ rs1, rs2, offset",
-        "semantics": "if rs1 == rs2: PC = PC + offset",
-        "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BNE",
-        "format": "B-type",
-        "description": "Branch if not equal",
-        "syntax": "BNE rs1, rs2, offset",
-        "semantics": "if rs1 != rs2: PC = PC + offset",
-        "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "001"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BZ",
-        "format": "B-type",
-        "description": "Branch if zero",
-        "syntax": "BZ rs1, offset",
-        "semantics": "if rs1 == 0: PC = PC + offset",
-        "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "value": "000"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "010"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BNZ",
-        "format": "B-type",
-        "description": "Branch if not zero",
-        "syntax": "BNZ rs1, offset",
-        "semantics": "if rs1 != 0: PC = PC + offset",
-        "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "value": "000"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "011"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BLT",
-        "format": "B-type",
-        "description": "Branch if less than (signed)",
-        "syntax": "BLT rs1, rs2, offset",
-        "semantics": "if rs1 < rs2: PC = PC + offset",
-        "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "100"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BGE",
-        "format": "B-type",
-        "description": "Branch if greater or equal (signed)",
-        "syntax": "BGE rs1, rs2, offset",
-        "semantics": "if rs1 >= rs2: PC = PC + offset",
-        "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "101"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BLTU",
-        "format": "B-type",
-        "description": "Branch if less than (unsigned)",
-        "syntax": "BLTU rs1, rs2, offset",
-        "semantics": "if unsigned rs1 < unsigned rs2: PC = PC + offset",
-        "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "110"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "BGEU",
-        "format": "B-type",
-        "description": "Branch if greater or equal (unsigned)",
-        "syntax": "BGEU rs1, rs2, offset",
-        "semantics": "if unsigned rs1 >= rs2: PC = PC + offset",
-        "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "111"},
-            {"name": "opcode", "bits": "2:0", "value": "010"}
-          ],
-          "offset_base": "current"
-        }
-      },
-      {
-        "mnemonic": "SB",
-        "format": "S-type",
-        "description": "Store byte",
-        "syntax": "SB rs2, offset(rs1)",
-        "semantics": "mem[rs1 + sign_extend(offset)] = rs2[7:0]",
-        "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "011"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "SW",
-        "format": "S-type",
-        "description": "Store word",
-        "syntax": "SW rs2, offset(rs1)",
-        "semantics": "mem[rs1 + sign_extend(offset)] = rs2",
-        "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rs1", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "001"},
-            {"name": "opcode", "bits": "2:0", "value": "011"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "LB",
-        "format": "L-type",
-        "description": "Load byte",
-        "syntax": "LB rd, offset(rs2)",
-        "semantics": "rd = sign_extend(mem[rs2 + sign_extend(offset)][7:0])",
-        "implementation": "# Load byte implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and sign extend\nif addr < len(memory):\n    byte_val = memory[addr]\n    # Sign extend 8-bit to 16-bit\n    if byte_val & 0x80:\n        result = byte_val | 0xFF00\n    else:\n        result = byte_val\n    write_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "100"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "LW",
-        "format": "L-type",
-        "description": "Load word",
-        "syntax": "LW rd, offset(rs2)",
-        "semantics": "rd = mem[rs2 + sign_extend(offset)]",
-        "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "001"},
-            {"name": "opcode", "bits": "2:0", "value": "100"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "LBU",
-        "format": "L-type",
-        "description": "Load byte unsigned",
-        "syntax": "LBU rd, offset(rs2)",
-        "semantics": "rd = zero_extend(mem[rs2 + sign_extend(offset)][7:0])",
-        "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
-            {"name": "rs2", "bits": "11:9", "type": "register"},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "func3", "bits": "5:3", "value": "100"},
-            {"name": "opcode", "bits": "2:0", "value": "100"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "J",
-        "format": "J-type",
-        "description": "Jump",
-        "syntax": "J offset",
-        "semantics": "PC = PC + offset",
-        "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\ncontext.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "link", "bits": "15:15", "value": "0"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "value": "000"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
-            {"name": "opcode", "bits": "2:0", "value": "101"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "JAL",
-        "format": "J-type",
-        "description": "Jump and link",
-        "syntax": "JAL rd, offset",
-        "semantics": "rd = PC + 2; PC = PC + offset",
-        "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
-        "encoding": {
-          "fields": [
-            {"name": "link", "bits": "15:15", "value": "1"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
-            {"name": "opcode", "bits": "2:0", "value": "101"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "LUI",
-        "format": "U-type",
-        "description": "Load upper immediate",
-        "syntax": "LUI rd, imm",
-        "semantics": "rd = (imm << 7)",
-        "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "flag", "bits": "15:15", "value": "0"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
-            {"name": "opcode", "bits": "2:0", "value": "110"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "AUIPC",
-        "format": "U-type",
-        "description": "Add upper immediate to PC",
-        "syntax": "AUIPC rd, imm",
-        "semantics": "rd = PC + (imm << 7)",
-        "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) & 0xFFFF\nwrite_register(operands['rd'], result)",
-        "encoding": {
-          "fields": [
-            {"name": "flag", "bits": "15:15", "value": "1"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
-            {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
-            {"name": "opcode", "bits": "2:0", "value": "110"}
-          ]
-        }
-      },
-      {
-        "mnemonic": "ECALL",
-        "format": "SYS-type",
-        "description": "Environment call",
-        "syntax": "ECALL svc",
-        "semantics": "Trap to service number",
-        "implementation": "# Environment call implementation\nsvc = operands['svc']\n# Handle system call based on service number\n# This is a placeholder - actual implementation would depend on system services\n# For now, just store the service number in a special register or flag\nset_flag('SVC', svc)\n# Could also trigger an interrupt or system call handler here",
-        "encoding": {
-          "fields": [
-            {"name": "svc", "bits": "15:6", "type": "immediate", "signed": false},
-            {"name": "unused", "bits": "5:3", "value": "000"},
-            {"name": "opcode", "bits": "2:0", "value": "111"}
-          ]
-                }
+    "register_count": 8,
+    "register_bits": 3
+  },
+  "register_formatting": {
+    "prefix": "x",
+    "suffix": "",
+    "case": "lower",
+    "zero_register": "x0",
+    "alternatives": {
+      "x0": ["t0", "zero"],
+      "x1": ["ra", "return"],
+      "x2": ["sp", "stack"],
+      "x3": ["s0", "saved"]
+    }
+  },
+  "operand_formatting": {
+    "immediate_prefix": "",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "register_prefix": "x",
+    "address_format": "0x{addr:X}",
+    "immediate_format": "{value}",
+    "register_format": "x{reg}",
+    "separators": {
+      "operand": ", ",
+      "address": "(",
+      "address_close": ")"
+    },
+    "disassembly": {
+      "immediate_format": "decimal",
+      "hex_threshold": 255,
+      "negative_hex_threshold": -255,
+      "always_decimal_for": ["ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI", "LI", "LI16", "AUIPC"],
+      "always_hex_for": ["LUI", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
+    }
+  },
+  "instruction_categories": {
+    "control_flow": {
+      "jumps": ["J", "JAL", "JALR", "JR"],
+      "branches": ["BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ"],
+      "calls": ["CALL", "ECALL"],
+      "returns": ["RET", "JR"]
+    },
+    "data_movement": ["LOAD", "STORE", "MOVE", "LI", "LUI", "AUIPC"],
+    "arithmetic": ["ADD", "SUB", "SLT", "SLTU", "INC", "DEC"],
+    "logical": ["AND", "OR", "XOR", "NOT", "NEG", "SLL", "SRL", "SRA"],
+    "stack": ["PUSH", "POP"]
+  },
+  "pseudo_instruction_fallbacks": {
+    "hide_operands_by_default": false,
+    "default_behavior": "show_operands",
+    "fallback_rules": {
+      "CLR": "hide_operands",
+      "RET": "hide_operands",
+      "NOP": "hide_operands",
+      "INC": "hide_operands",
+      "DEC": "hide_operands",
+      "NOT": "hide_operands",
+      "NEG": "hide_operands"
+    }
+  },
+  "data_detection": {
+    "string_encodings": ["ascii", "utf8"],
+    "ascii_threshold": 0.8,
+    "min_string_length": 3,
+    "max_string_length": 100,
+    "detect_zeros": true,
+    "detect_patterns": ["repeating", "incrementing", "decrementing"]
+  },
+  "symbol_resolution": {
+    "case_sensitive": false,
+    "scope_rules": {
+      "local": ".",
+      "global": "",
+      "external": "_"
+    },
+    "naming_conventions": {
+      "functions": "func_{name}",
+      "variables": "var_{name}",
+      "constants": "CONST_{name}"
+    },
+    "precedence": ["local", "global", "external"]
+  },
+  "error_messages": {
+    "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+    "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+    "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+    "invalid_address": "Invalid address {address} for {context}",
+    "format": {
+      "locale": "en_US",
+      "date_format": "YYYY-MM-DD",
+      "time_format": "HH:MM:SS"
+    }
+  },
+  "constants": {
+    "word_mask": {"value": 65535, "description": "16-bit word mask (0xFFFF)"},
+    "sign_bit_mask": {"value": 32768, "description": "16-bit sign bit mask (0x8000)"},
+    "max_signed_value": {"value": 32767, "description": "Maximum 16-bit signed value (0x7FFF)"},
+    "min_signed_value": {"value": -32768, "description": "Minimum 16-bit signed value (-0x8000)"},
+    "address_mask": {"value": 65535, "description": "16-bit address mask (0xFFFF)"},
+    "register_count": {"value": 8, "description": "Number of registers (x0-x7)"},
+    "immediate_sign_bit_7": {"value": 64, "description": "7-bit immediate sign bit (0x40)"},
+    "immediate_sign_extend_7": {"value": 65408, "description": "7-bit immediate sign extension (0xFF80)"},
+    "branch_sign_extend_5": {"value": 65504, "description": "5-bit branch sign extension (0xFFE0)"},
+    "shift_amount_mask": {"value": 15, "description": "4-bit shift amount mask (0xF)"}
+  },
+  "registers": {
+    "general_purpose": [
+      {"name": "x0", "number": 0, "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
+      {"name": "x1", "number": 1, "size": 16, "alias": ["ra"], "description": "Return address (JAL/JALR)"},
+      {"name": "x2", "number": 2, "size": 16, "alias": ["sp"], "description": "Stack pointer (init 0xEFFE)"},
+      {"name": "x3", "number": 3, "size": 16, "alias": ["s0"], "description": "Saved/frame pointer (callee-saved)"},
+      {"name": "x4", "number": 4, "size": 16, "alias": ["s1"], "description": "Saved (callee-saved)"},
+      {"name": "x5", "number": 5, "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved scratch)"},
+      {"name": "x6", "number": 6, "size": 16, "alias": ["a0"], "description": "Arg0/Return value"},
+      {"name": "x7", "number": 7, "size": 16, "alias": ["a1"], "description": "Arg1 (spill to stack for more)"}
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "ADD",
+      "format": "R-type",
+      "description": "Add registers (two-operand)",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = (rd + rs2) & 0xFFFF",
+      "implementation": "# Add instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', (rd_val + rs2_val) > 0xFFFF)\nset_flag('V', ((rd_val & 0x8000) == (rs2_val & 0x8000)) and ((result & 0x8000) != (rd_val & 0x8000)))",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
       }
-    ],
-    "directives": [
-      {
-        "name": ".org",
-        "description": "Set origin address",
-        "action": "set_origin",
-        "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
-        "argument_types": ["number"],
-        "syntax": ".org address",
-        "examples": [".org 0x1000", ".org 4096"]
-      },
-      {
-        "name": ".word",
-        "description": "Define word data",
-        "action": "define_word",
-        "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".word value1, value2, ...",
-        "examples": [".word 0x1234", ".word 42, 0xABCD"]
-      },
-      {
-        "name": ".byte",
-        "description": "Define byte data",
-        "action": "define_byte",
-        "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".byte value1, value2, ...",
-        "examples": [".byte 0x12", ".byte 65, 66, 67"]
-      },
-      {
-        "name": ".ascii",
-        "description": "Define ASCII string",
-        "action": "define_ascii",
-        "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["string"],
-        "syntax": ".ascii \"string\"",
-        "examples": [".ascii \"Hello, World!\""]
-      },
-      {
-        "name": ".align",
-        "description": "Align to boundary",
-        "action": "align",
-        "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".align boundary",
-        "examples": [".align 4", ".align 16"]
-      }
-    ],
-    "pseudo_instructions": [
-      {
-        "mnemonic": "NOP",
-        "description": "No operation",
-        "syntax": "NOP",
-        "expansion": "ADD x0, x0"
-      },
-      {
-        "mnemonic": "CLR",
-        "description": "Clear register",
-        "syntax": "CLR rd",
-        "expansion": "XOR rd, rd"
-      },
-      {
-        "mnemonic": "INC",
-        "description": "Increment register",
-        "syntax": "INC rd",
-        "expansion": "ADDI rd, 1"
-      },
-      {
-        "mnemonic": "DEC",
-        "description": "Decrement register",
-        "syntax": "DEC rd",
-        "expansion": "ADDI rd, -1"
-      },
-      {
-        "mnemonic": "NOT",
-        "description": "Bitwise NOT",
-        "syntax": "NOT rd",
-        "expansion": "XORI rd, -1"
-      },
-      {
-        "mnemonic": "NEG",
-        "description": "Negate register",
-        "syntax": "NEG rd",
-        "expansion": "XORI rd, -1; ADDI rd, 1"
-      },
-      {
-        "mnemonic": "CALL",
-        "description": "Call function",
-        "syntax": "CALL label",
-        "expansion": "JAL x1, label"
-      },
-      {
-        "mnemonic": "RET",
-        "description": "Return from function",
-        "syntax": "RET",
-        "expansion": "JR x1"
-      },
-      {
-        "mnemonic": "JMP",
-        "description": "Unconditional jump",
-        "syntax": "JMP label",
-        "expansion": "J label"
-      },
-      {
-        "mnemonic": "LI16",
-        "description": "Load 16-bit immediate",
-        "syntax": "LI16 rd, imm",
-        "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]"
-      },
-      {
-        "mnemonic": "LA",
-        "description": "Load address",
-        "syntax": "LA rd, label",
-        "expansion": "AUIPC rd, label[15:9]; ADDI rd, label[8:0]"
-      },
-      {
-        "mnemonic": "PUSH",
-        "description": "Push register to stack",
-        "syntax": "PUSH rd",
-        "expansion": "ADDI x2, -2; SW rd, 0(x2)"
-      },
-      {
-        "mnemonic": "POP",
-        "description": "Pop from stack to register",
-        "syntax": "POP rd",
-        "expansion": "LW rd, 0(x2); ADDI x2, 2"
-      }
-    ],
-    "assembly_syntax": {
-      "comment_chars": ["#", ";"],
-      "label_suffix": ":",
-      "register_prefix": "",
-      "immediate_prefix": "",
-      "string_delimiters": ["\"", "'"],
-      "case_sensitive": false,
-      "instruction_separator": "\n"
     },
-    "constants": {
-      "RESET_VECTOR": 0,
-      "INT_VECTORS": 0,
-      "CODE_START": 32,
-      "MMIO_BASE": 61440,
-      "MMIO_SIZE": 4096,
-      "STACK_TOP": 61438,
-      "MEM_SIZE": 65536
+    {
+      "mnemonic": "SUB",
+      "format": "R-type",
+      "description": "Subtract registers (two-operand)",
+      "syntax": "SUB rd, rs2",
+      "semantics": "rd = (rd - rs2) & 0xFFFF",
+      "implementation": "# Subtract instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', rd_val >= rs2_val)\nset_flag('V', ((rd_val & 0x8000) != (rs2_val & 0x8000)) and ((result & 0x8000) == (rs2_val & 0x8000)))",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0001"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
     },
-    "ecall_services": {
-      "0x000": {
-        "name": "print_char",
-        "description": "Print character from a0 register",
-        "parameters": {
-          "a0": "Character to print"
-        },
-        "return": "None"
+    {
+      "mnemonic": "SLT",
+      "format": "R-type",
+      "description": "Set if less than (signed)",
+      "syntax": "SLT rd, rs2",
+      "semantics": "rd = 1 if rd  < rs2  else 0",
+      "implementation": "# Set if less than (signed) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nresult = 1 if rd_signed < rs2_signed else 0\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0010"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "001"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SLTU",
+      "format": "R-type",
+      "description": "Set if less than (unsigned)",
+      "syntax": "SLTU rd, rs2",
+      "semantics": "rd = 1 if unsigned(rd)  < unsigned(rs2)  else 0",
+      "implementation": "# Set if less than (unsigned) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rd_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0011"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "010"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SLL",
+      "format": "R-type",
+      "description": "Shift left logical",
+      "syntax": "SLL rd, rs2",
+      "semantics": "rd = (rd << (rs2 & 0xF)) & 0xFFFF",
+      "implementation": "# Shift left logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0100"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SRL",
+      "format": "R-type",
+      "description": "Shift right logical",
+      "syntax": "SRL rd, rs2",
+      "semantics": "rd = (rd >> (rs2 & 0xF)) & 0xFFFF",
+      "implementation": "# Shift right logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0101"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SRA",
+      "format": "R-type",
+      "description": "Shift right arithmetic",
+      "syntax": "SRA rd, rs2",
+      "semantics": "rd = (rd >> (rs2 & 0xF)) & 0xFFFF",
+      "implementation": "# Shift right arithmetic implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0110"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "OR",
+      "format": "R-type",
+      "description": "Bitwise OR",
+      "syntax": "OR rd, rs2",
+      "semantics": "rd = (rd | rs2) & 0xFFFF",
+      "implementation": "# Bitwise OR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val | rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0111"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "100"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "AND",
+      "format": "R-type",
+      "description": "Bitwise AND",
+      "syntax": "AND rd, rs2",
+      "semantics": "rd = (rd & rs2) & 0xFFFF",
+      "implementation": "# Bitwise AND implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val & rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "101"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "XOR",
+      "format": "R-type",
+      "description": "Bitwise XOR",
+      "syntax": "XOR rd, rs2",
+      "semantics": "rd = (rd ^ rs2) & 0xFFFF",
+      "implementation": "# Bitwise XOR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val ^ rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1001"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "110"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "MV",
+      "format": "R-type",
+      "description": "Move register",
+      "syntax": "MV rd, rs2",
+      "semantics": "rd = rs2 & 0xFFFF",
+      "implementation": "# Move register implementation\nrs2_val = read_register(operands['rs2'])\nwrite_register(operands['rd'], rs2_val)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1010"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "111"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "JR",
+      "format": "R-type",
+      "description": "Jump register",
+      "syntax": "JR rd",
+      "semantics": "PC = rd & 0xFFFF",
+      "implementation": "# Jump register implementation\nrd_val = read_register(operands['rd'])\n# Set PC to register value\ncontext.pc = rd_val & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1011"},
+          {"name": "rs2", "bits": "11:9", "value": "000"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "JALR",
+      "format": "R-type",
+      "description": "Jump and link register",
+      "syntax": "JALR rd, rs2",
+      "semantics": "rd = (PC + 2) & 0xFFFF; PC = rs2 & 0xFFFF",
+      "implementation": "# Jump and link register implementation\nrs2_val = read_register(operands['rs2'])\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Set PC to register value\ncontext.pc = rs2_val & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1100"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ADDI",
+      "format": "I-type",
+      "description": "Add immediate",
+      "syntax": "ADDI rd, imm",
+      "semantics": "rd = (rd + imm) & 0xFFFF",
+      "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SLTI",
+      "format": "I-type",
+      "description": "Set if less than immediate (signed)",
+      "syntax": "SLTI rd, imm",
+      "semantics": "rd = 1 if rd < imm else 0",
+      "implementation": "# Set if less than immediate (signed) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nimm_signed = imm_val if (imm_val & 0x8000) == 0 else imm_val - 0x10000\nresult = 1 if rd_signed < imm_signed else 0\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "001"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SLTUI",
+      "format": "I-type",
+      "description": "Set if less than immediate (unsigned)",
+      "syntax": "SLTUI rd, imm",
+      "semantics": "rd = 1 if unsigned(rd) < imm else 0",
+      "implementation": "# Set if less than immediate (unsigned) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Treat as unsigned comparison\nresult = 1 if rd_val < (imm_val & 0xFFFF) else 0\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "010"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SLLI",
+      "format": "I-type",
+      "description": "Shift left logical immediate",
+      "syntax": "SLLI rd, imm",
+      "semantics": "rd = (rd << imm) & 0xFFFF",
+      "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "001"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SRLI",
+      "format": "I-type",
+      "description": "Shift right logical immediate",
+      "syntax": "SRLI rd, imm",
+      "semantics": "rd = (rd >> imm) & 0xFFFF",
+      "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "010"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SRAI",
+      "format": "I-type",
+      "description": "Shift right arithmetic immediate",
+      "syntax": "SRAI rd, imm",
+      "semantics": "rd = (rd >> imm) & 0xFFFF",
+      "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "100"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ORI",
+      "format": "I-type",
+      "description": "OR immediate",
+      "syntax": "ORI rd, imm",
+      "semantics": "rd = (rd | imm) & 0xFFFF",
+      "implementation": "# OR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val | (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "100"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ANDI",
+      "format": "I-type",
+      "description": "AND immediate",
+      "syntax": "ANDI rd, imm",
+      "semantics": "rd = (rd & imm) & 0xFFFF",
+      "implementation": "# AND immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val & (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "101"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "XORI",
+      "format": "I-type",
+      "description": "XOR immediate",
+      "syntax": "XORI rd, imm",
+      "semantics": "rd = (rd ^ imm) & 0xFFFF",
+      "implementation": "# XOR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val ^ (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "110"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LI",
+      "format": "I-type",
+      "description": "Load immediate",
+      "syntax": "LI rd, imm",
+      "semantics": "rd = imm & 0xFFFF",
+      "implementation": "# Load immediate implementation\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = imm_val & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "111"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "BEQ",
+      "format": "B-type",
+      "description": "Branch if equal",
+      "syntax": "BEQ rs1, rs2, offset",
+      "semantics": "if rs1 == rs2: PC = offset & 0xFFFF",
+      "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BNE",
+      "format": "B-type",
+      "description": "Branch if not equal",
+      "syntax": "BNE rs1, rs2, offset",
+      "semantics": "if rs1 != rs2: PC = offset & 0xFFFF",
+      "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "001"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BZ",
+      "format": "B-type",
+      "description": "Branch if zero",
+      "syntax": "BZ rs1, offset",
+      "semantics": "if rs1 == 0: PC = offset & 0xFFFF",
+      "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "value": "000"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "010"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BNZ",
+      "format": "B-type",
+      "description": "Branch if not zero",
+      "syntax": "BNZ rs1, offset",
+      "semantics": "if rs1 != 0: PC = offset & 0xFFFF",
+      "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "value": "000"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "011"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BLT",
+      "format": "B-type",
+      "description": "Branch if less than (signed)",
+      "syntax": "BLT rs1, rs2, offset",
+      "semantics": "if rs1 < rs2: PC = offset & 0xFFFF",
+      "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "100"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BGE",
+      "format": "B-type",
+      "description": "Branch if greater or equal (signed)",
+      "syntax": "BGE rs1, rs2, offset",
+      "semantics": "if rs1 >= rs2: PC = offset & 0xFFFF",
+      "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "101"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BLTU",
+      "format": "B-type",
+      "description": "Branch if less than (unsigned)",
+      "syntax": "BLTU rs1, rs2, offset",
+      "semantics": "if unsigned(rs1) < unsigned(rs2): PC = offset & 0xFFFF",
+      "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "110"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "BGEU",
+      "format": "B-type",
+      "description": "Branch if greater or equal (unsigned)",
+      "syntax": "BGEU rs1, rs2, offset",
+      "semantics": "if unsigned(rs1) >= unsigned(rs2): PC = offset & 0xFFFF",
+      "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "111"},
+          {"name": "opcode", "bits": "2:0", "value": "010"}
+        ],
+        "offset_base": "current"
+      }
+    },
+    {
+      "mnemonic": "SB",
+      "format": "S-type",
+      "description": "Store byte",
+      "syntax": "SB rs2, offset(rs1)",
+      "semantics": "memory[rs1 + offset] = rs2 & 0xFFFF",
+      "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "011"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SW",
+      "format": "S-type",
+      "description": "Store word",
+      "syntax": "SW rs2, offset(rs1)",
+      "semantics": "memory[rs1 + offset] = rs2 & 0xFFFF",
+      "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rs1", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "001"},
+          {"name": "opcode", "bits": "2:0", "value": "011"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LB",
+      "format": "L-type",
+      "description": "Load byte",
+      "syntax": "LB rd, offset(rs2)",
+      "semantics": "rd = memory[rs2 + offset] & 0xFFFF",
+      "implementation": "# Load byte implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and sign extend\nif addr < len(memory):\n    byte_val = memory[addr]\n    # Sign extend 8-bit to 16-bit\n    if byte_val & 0x80:\n        result = byte_val | 0xFF00\n    else:\n        result = byte_val\n    write_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "100"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LW",
+      "format": "L-type",
+      "description": "Load word",
+      "syntax": "LW rd, offset(rs2)",
+      "semantics": "rd = memory[rs2 + offset] & 0xFFFF",
+      "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "001"},
+          {"name": "opcode", "bits": "2:0", "value": "100"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LBU",
+      "format": "L-type",
+      "description": "Load byte unsigned",
+      "syntax": "LBU rd, offset(rs2)",
+      "semantics": "rd = memory[rs2 + offset] & 0xFFFF",
+      "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "100"},
+          {"name": "opcode", "bits": "2:0", "value": "100"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "J",
+      "format": "J-type",
+      "description": "Jump",
+      "syntax": "J offset",
+      "semantics": "PC = offset & 0xFFFF",
+      "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset to 16-bit (bit 8 is sign bit)\nif offset & 0x100:\n    offset = offset | 0xFF00  # Sign extend upper 8 bits (bits 15:8)\ncontext.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "link", "bits": "15:15", "value": "0"},
+          {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+          {"name": "rd", "bits": "8:6", "value": "000"},
+          {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "2:0", "value": "101"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "JAL",
+      "format": "J-type",
+      "description": "Jump and link",
+      "syntax": "JAL rd, offset",
+      "semantics": "rd = (PC + 2) & 0xFFFF; PC = offset & 0xFFFF",
+      "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFF00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "link", "bits": "15:15", "value": "1"},
+          {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "2:0", "value": "101"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LUI",
+      "format": "U-type",
+      "description": "Load upper immediate",
+      "syntax": "LUI rd, imm",
+      "semantics": "rd = (imm << 7) & 0xFFFF",
+      "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "flag", "bits": "15:15", "value": "0"},
+          {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "2:0", "value": "110"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "AUIPC",
+      "format": "U-type",
+      "description": "Add upper immediate to PC",
+      "syntax": "AUIPC rd, imm",
+      "semantics": "rd = (PC + (imm << 7)) & 0xFFFF",
+      "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) & 0xFFFF\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "flag", "bits": "15:15", "value": "1"},
+          {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "2:0", "value": "110"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ECALL",
+      "format": "SYS-type",
+      "description": "Environment call",
+      "syntax": "ECALL svc",
+      "semantics": "Trap to service number",
+      "implementation": "# Environment call implementation\nsvc = operands['svc']\n# Handle system call based on service number\n# This is a placeholder - actual implementation would depend on system services\n# For now, just store the service number in a special register or flag\nset_flag('SVC', svc)\n# Could also trigger an interrupt or system call handler here",
+      "encoding": {
+        "fields": [
+          {"name": "svc", "bits": "15:6", "type": "immediate", "signed": false},
+          {"name": "unused", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "111"}
+        ]
+              }
+    }
+  ],
+  "directives": [
+    {
+      "name": ".org",
+      "description": "Set origin address",
+      "action": "set_origin",
+      "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
+      "argument_types": ["number"],
+      "syntax": ".org address",
+      "examples": [".org 0x1000", ".org 4096"]
+    },
+    {
+      "name": ".word",
+      "description": "Define word data",
+      "action": "define_word",
+      "aliases": [".dw", ".data"],
+      "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".word value1, value2, ...",
+      "examples": [".word 0x1234", ".word 42, 0xABCD"]
+    },
+    {
+      "name": ".byte",
+      "description": "Define byte data",
+      "action": "define_byte",
+      "aliases": [".db", ".data8"],
+      "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".byte value1, value2, ...",
+      "examples": [".byte 0x12", ".byte 65, 66, 67"]
+    },
+    {
+      "name": ".ascii",
+      "description": "Define ASCII string",
+      "action": "define_ascii",
+      "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["string"],
+      "syntax": ".ascii \"string\"",
+      "examples": [".ascii \"Hello, World!\""]
+    },
+    {
+      "name": ".align",
+      "description": "Align to boundary",
+      "action": "align",
+      "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".align boundary",
+      "examples": [".align 4", ".align 16"]
+    },
+    {
+      "name": ".string",
+      "description": "Define null-terminated ASCII string",
+      "action": "define_stringz",
+      "implementation": "# Define null-terminated string\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii') + b'\\x00')\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["string"],
+      "syntax": ".string \"string\"",
+      "examples": [".string \"Hello\\n\""]
+    },
+    {
+      "name": ".fill",
+      "description": "Fill N items, M bytes each, with value",
+      "action": "fill",
+      "implementation": "# Fill directive\nif len(args) >= 3:\n    count = int(args[0], 0)\n    size = int(args[1], 0)\n    value = int(args[2], 0)\n    result = bytearray()\n    for _ in range(count):\n        result.extend(value.to_bytes(size, 'little'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number", "number", "number"],
+      "syntax": ".fill count, size, value",
+      "examples": [".fill 5, 2, 0xFFFF"]
+    },
+    {
+      "name": ".set",
+      "description": "Define constant",
+      "action": "define_constant",
+      "aliases": [".equ", ".define", ".const"],
+      "implementation": "# Define constant directive implementation\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_constant(symbol, value)",
+      "argument_types": ["string", "number"],
+      "syntax": ".set NAME, VALUE",
+      "examples": [".set MAX_COUNT, 100"]
+    },
+    {
+      "name": ".extern",
+      "description": "Declare external symbol",
+      "action": "declare_extern",
+      "implementation": "# Declare external symbol\nif args:\n    for symbol in args:\n        assembler.symbol_table.declare_extern(symbol)",
+      "argument_types": ["string"],
+      "syntax": ".extern symbol",
+      "examples": [".extern external_func"]
+    },
+    {
+      "name": ".ifdef",
+      "description": "If symbol is defined (conditional assembly)",
+      "action": "conditional_ifdef",
+      "implementation": "# Ifdef directive (handled by preprocessor)",
+      "argument_types": ["string"],
+      "syntax": ".ifdef SYMBOL",
+      "examples": [".ifdef DEBUG"]
+    },
+    {
+      "name": ".ifndef",
+      "description": "If symbol is not defined (conditional assembly)",
+      "action": "conditional_ifndef",
+      "implementation": "# Ifndef directive (handled by preprocessor)",
+      "argument_types": ["string"],
+      "syntax": ".ifndef SYMBOL",
+      "examples": [".ifndef RELEASE"]
+    },
+    {
+      "name": ".if",
+      "description": "If expression is true (conditional assembly)",
+      "action": "conditional_if",
+      "implementation": "# If directive (handled by preprocessor)",
+      "argument_types": ["expression"],
+      "syntax": ".if EXPR",
+      "examples": [".if STACK_SIZE > 0x200"]
+    },
+    {
+      "name": ".else",
+      "description": "Else for conditional assembly",
+      "action": "conditional_else",
+      "implementation": "# Else directive (handled by preprocessor)",
+      "argument_types": [],
+      "syntax": ".else",
+      "examples": [".else"]
+    },
+    {
+      "name": ".endif",
+      "description": "End if for conditional assembly",
+      "action": "conditional_endif",
+      "implementation": "# Endif directive (handled by preprocessor)",
+      "argument_types": [],
+      "syntax": ".endif",
+      "examples": [".endif"]
+    },
+    {
+      "name": ".include",
+      "description": "Include another assembly file",
+      "action": "include_file",
+      "implementation": "# Include directive (handled by preprocessor)",
+      "argument_types": ["string"],
+      "syntax": ".include \"file\"",
+      "examples": [".include \"constants.asm\""]
+    },
+    {
+      "name": ".incbin",
+      "description": "Include binary file",
+      "action": "include_binary",
+      "implementation": "# Incbin directive (handled by preprocessor)",
+      "argument_types": ["string"],
+      "syntax": ".incbin \"file\"",
+      "examples": [".incbin \"data.bin\""]
+    }
+  ],
+  "pseudo_instructions": [
+    {
+      "mnemonic": "NOP",
+      "description": "No operation",
+      "syntax": "NOP",
+      "expansion": "ADD x0, x0",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "CLR",
+      "description": "Clear register",
+      "syntax": "CLR rd",
+      "expansion": "XOR rd, rd",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "INC",
+      "description": "Increment register",
+      "syntax": "INC rd",
+      "expansion": "ADDI rd, 1",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "DEC",
+      "description": "Decrement register",
+      "syntax": "DEC rd",
+      "expansion": "ADDI rd, -1",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "NOT",
+      "description": "Bitwise NOT",
+      "syntax": "NOT rd",
+      "expansion": "XORI rd, -1",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "NEG",
+      "description": "Negate register",
+      "syntax": "NEG rd",
+      "expansion": "XORI rd, -1; ADDI rd, 1",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true,
+        "reconstruction_type": "multi_instruction",
+        "instructions": ["XORI", "ADDI"]
+      }
+    },
+    {
+      "mnemonic": "CALL",
+      "description": "Call function",
+      "syntax": "CALL label",
+      "expansion": "JAL x1, label",
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "jump_with_return"
+      }
+    },
+    {
+      "mnemonic": "RET",
+      "description": "Return from function",
+      "syntax": "RET",
+      "expansion": "JR x1",
+      "disassembly": {
+        "hide_operands": true,
+        "show_as_pseudo": true
+      }
+    },
+    {
+      "mnemonic": "JMP",
+      "description": "Unconditional jump",
+      "syntax": "JMP label",
+      "expansion": "J label",
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "jump"
+      }
+    },
+    {
+      "mnemonic": "LI16",
+      "description": "Load 16-bit immediate",
+      "syntax": "LI16 rd, imm",
+      "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]",
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "multi_instruction",
+        "instructions": ["LUI", "ORI"],
+        "combine_fields": ["imm", "imm2"]
+      }
+    },
+    {
+      "mnemonic": "LA",
+      "description": "Load address",
+      "syntax": "LA rd, label",
+      "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]",
+      "smart_expansion": {
+        "enabled": true,
+        "description": "Intelligently redistribute bits between AUIPC and ADDI when ADDI immediate overflows",
+        "strategy": "overflow_redistribution",
+        "max_addi_bits": 7,
+        "max_auipc_bits": 9,
+        "overflow_threshold": 63
       },
-      "0x001": {
-        "name": "read_string",
-        "description": "Read string into buffer at a0, up to a1 bytes. Output: a0=string length",
-        "parameters": {
-          "a0": "Address of the string buffer (input/output)",
-          "a1": "Maximum length of string to read (input)"
-        },
-        "return": "a0: String length read"
-      },
-      "0x002": {
-        "name": "read_integer",
-        "description": "Read an integer from input. Output: a0=the read integer",
-        "parameters": {},
-        "return": "a0: The read integer"
-      },
-      "0x003": {
-        "name": "print_string",
-        "description": "Print string starting at address in a0 register",
-        "parameters": {
-          "a0": "Address of null-terminated string"
-        },
-        "return": "None"
-      },
-      "0x004": {
-        "name": "play_tone",
-        "description": "Play tone with frequency and duration",
-        "parameters": {
-          "a0": "Frequency (Hz)",
-          "a1": "Duration (ms)"
-        },
-        "return": "None"
-      },
-      "0x005": {
-        "name": "set_audio_volume",
-        "description": "Set audio volume (0-255)",
-        "parameters": {
-          "a0": "Volume (0-255)"
-        },
-        "return": "None"
-      },
-      "0x006": {
-        "name": "stop_audio_playback",
-        "description": "Stop audio playback",
-        "parameters": {},
-        "return": "None"
-      },
-      "0x007": {
-        "name": "read_keyboard",
-        "description": "Read the keyboard: a0=key code, a1=1 if key pressed, 0 if not",
-        "parameters": {},
-        "return": "a0: Key code, a1: 1 if key pressed, 0 if not"
-      },
-      "0x008": {
-        "name": "registers_dump",
-        "description": "Prints the values of all registers",
-        "parameters": {},
-        "return": "None"
-      },
-      "0x009": {
-        "name": "memory_dump",
-        "description": "Prints the content of memory from address in a0 for number of bytes in a1",
-        "parameters": {
-          "a0": "Start address",
-          "a1": "Number of bytes"
-        },
-        "return": "None"
-      },
-      "0x00A": {
-        "name": "exit",
-        "description": "Exit program with code in a0 register",
-        "parameters": {
-          "a0": "Exit code"
-        },
-        "return": "None"
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "address_reconstruction",
+        "instructions": ["AUIPC", "ADDI"],
+        "combine_fields": ["imm", "imm2"]
+      }
+    },
+    {
+      "mnemonic": "PUSH",
+      "description": "Push register to stack",
+      "syntax": "PUSH rd",
+      "expansion": "ADDI x2, -2; SW rd, 0(x2)",
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "multi_instruction",
+        "instructions": ["ADDI", "SW"]
+      }
+    },
+    {
+      "mnemonic": "POP",
+      "description": "Pop from stack to register",
+      "syntax": "POP rd",
+      "expansion": "LW rd, 0(x2); ADDI x2, 2",
+      "disassembly": {
+        "hide_operands": false,
+        "show_as_pseudo": true,
+        "reconstruction_type": "multi_instruction",
+        "instructions": ["LW", "ADDI"]
       }
     }
-  } 
+  ],
+  "assembly_syntax": {
+    "comment_chars": ["#", ";"],
+    "label_suffix": ":",
+    "register_prefix": "",
+    "immediate_prefix": "",
+    "string_delimiters": ["\"", "'"],
+    "case_sensitive": false,
+    "instruction_separator": "\n"
+  },
+  "label_definition": {
+    "description": "Label definition syntax and scope rules for ZX16 assembly",
+    "syntax": {
+      "global_label": "label_name:",
+      "local_label": ".local_label:",
+      "data_label": "label_name: directive",
+      "section_label": "section_name:"
+    },
+    "rules": {
+      "naming": {
+        "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+        "local_prefix": ".",
+        "case_sensitive": false,
+        "max_length": 64
+      },
+      "scope": {
+        "global": "Visible across all files",
+        "local": "Visible only within current file",
+        "section": "Defines section boundaries"
+      },
+      "placement": {
+        "start_of_line": true,
+        "followed_by_colon": true,
+        "can_follow_instruction": false,
+        "can_follow_directive": true
+      }
+    },
+    "examples": [
+      {
+        "type": "Global Label",
+        "description": "Main entry point, visible across all files",
+        "syntax": "main:",
+        "usage": "main:\n    LI x6, 10\n    CALL function"
+      },
+      {
+        "type": "Local Label", 
+        "description": "File-scope label, starts with dot",
+        "syntax": ".local_label:",
+        "usage": ".loop:\n    ADD x1, x2\n    BNZ x1, .loop"
+      },
+      {
+        "type": "Loop Label",
+        "description": "Common pattern for loop control",
+        "syntax": "loop:",
+        "usage": "loop:\n    ADD x1, x2\n    BNZ x1, loop\n    RET"
+      },
+      {
+        "type": "Section Label",
+        "description": "Defines code or data section",
+        "syntax": "data_section:",
+        "usage": "data_section:\n    .word 0x1234\n    .word 0x5678"
+      },
+      {
+        "type": "Data Label",
+        "description": "Label with data allocation",
+        "syntax": "buffer: .space 64",
+        "usage": "buffer: .space 64\n    .ascii \"Hello, World!\""
+      },
+      {
+        "type": "Function Label",
+        "description": "Function entry point",
+        "syntax": "function_name:",
+        "usage": "my_function:\n    PUSH x3\n    ADD x6, x7\n    POP x3\n    RET"
+      }
+    ],
+    "features": {
+      "forward_references": true,
+      "label_arithmetic": true,
+      "bitfield_extraction": true,
+      "scope_resolution": true,
+      "section_awareness": true
+    },
+    "bitfield_syntax": {
+      "description": "Extract bits from label address",
+      "pattern": "label[high:low]",
+      "examples": [
+        "label[15:9]  # Upper 7 bits",
+        "label[8:0]   # Lower 9 bits",
+        "label[7:0]   # Lower 8 bits"
+      ]
+    },
+    "arithmetic_operations": {
+      "supported": ["+", "-", "*", "/", "&", "|", "^", "<<", ">>"],
+      "examples": [
+        "end_label - start_label",
+        "(buffer + 4)",
+        "~0x0F",
+        "(value << 2) | 0x03"
+      ]
+    }
+  },
+  "constants": {
+    "RESET_VECTOR": 0,
+    "INT_VECTORS": 0,
+    "CODE_START": 32,
+    "MMIO_BASE": 61440,
+    "MMIO_SIZE": 4096,
+    "STACK_TOP": 61438,
+    "MEM_SIZE": 65536
+  },
+  "ecall_services": {
+    "0x000": {
+      "name": "print_char",
+      "description": "Print character from a0 register",
+      "parameters": {
+        "a0": "Character to print"
+      },
+      "return": "None"
+    },
+    "0x001": {
+      "name": "read_string",
+      "description": "Read string into buffer at a0, up to a1 bytes. Output: a0=string length",
+      "parameters": {
+        "a0": "Address of the string buffer (input/output)",
+        "a1": "Maximum length of string to read (input)"
+      },
+      "return": "a0: String length read"
+    },
+    "0x002": {
+      "name": "read_integer",
+      "description": "Read an integer from input. Output: a0=the read integer",
+      "parameters": {},
+      "return": "a0: The read integer"
+    },
+    "0x003": {
+      "name": "print_string",
+      "description": "Print string starting at address in a0 register",
+      "parameters": {
+        "a0": "Address of null-terminated string"
+      },
+      "return": "None"
+    },
+    "0x004": {
+      "name": "play_tone",
+      "description": "Play tone with frequency and duration",
+      "parameters": {
+        "a0": "Frequency (Hz)",
+        "a1": "Duration (ms)"
+      },
+      "return": "None"
+    },
+    "0x005": {
+      "name": "set_audio_volume",
+      "description": "Set audio volume (0-255)",
+      "parameters": {
+        "a0": "Volume (0-255)"
+      },
+      "return": "None"
+    },
+    "0x006": {
+      "name": "stop_audio_playback",
+      "description": "Stop audio playback",
+      "parameters": {},
+      "return": "None"
+    },
+    "0x007": {
+      "name": "read_keyboard",
+      "description": "Read the keyboard: a0=key code, a1=1 if key pressed, 0 if not",
+      "parameters": {},
+      "return": "a0: Key code, a1: 1 if key pressed, 0 if not"
+    },
+    "0x008": {
+      "name": "registers_dump",
+      "description": "Prints the values of all registers",
+      "parameters": {},
+      "return": "None"
+    },
+    "0x009": {
+      "name": "memory_dump",
+      "description": "Prints the content of memory from address in a0 for number of bytes in a1",
+      "parameters": {
+        "a0": "Start address",
+        "a1": "Number of bytes"
+      },
+      "return": "None"
+    },
+    "0x00A": {
+      "name": "exit",
+      "description": "Exit program with code in a0 register",
+      "parameters": {
+        "a0": "Exit code"
+      },
+      "return": "None"
+    }
+  },
+  "control_flow_instructions": ["J", "JAL", "JALR", "JR", "BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ", "CALL", "ECALL", "RET"],
+  "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"],
+  "data_formatting": {
+    "force_word": true,
+    "ascii_detection": false
+  },
+  "label_generation": {
+    "auto_labels": true,
+    "reconstruct_labels": true,
+    "use_symbolic_names": true
+  },
+  "pseudo_instruction_reconstruction": {
+    "enabled": false,
+    "show_underlying_instructions": true
+  },
+  "register_formatting": {
+    "prefer_canonical": true,
+    "always_use_xn": true,
+    "aliases": false
+  },
+  "immediate_formatting": {
+    "always_show_signed": true,
+    "use_decimal_for_small": true,
+    "hex_threshold": 255
+  },
+  "data_formatting": {
+    "force_word": true,
+    "ascii_detection": false,
+    "always_use_word": true
+  },
+  "disassembly_preferences": {
+    "reconstruct_original": true,
+    "preserve_labels": true,
+    "use_original_syntax": true
+  },
+  "register_parsing": {
+    "mode": "numeric",
+    "prefix": "",
+    "allow_numeric": true,
+    "case_sensitive": false
+  }
+} 

@@ -26,8 +26,18 @@ export async function POST(request: NextRequest) {
         let disassembleScriptFile: string | undefined;
 
         try {
-            // Write ISA definition to temporary file
-            writeFileSync(isaFile, JSON.stringify(isaDefinition, null, 2));
+            // Check if we're using a built-in ISA name or a custom ISA definition
+            const pythonPath = path.join(process.cwd(), '.venv', 'bin', 'python');
+            let isaName = 'custom';
+            
+            if (typeof isaDefinition === 'string') {
+                isaName = isaDefinition;
+                // For built-in ISA, we don't need to write a file
+            } else {
+                // Write custom ISA definition to temporary file
+                writeFileSync(isaFile, JSON.stringify(isaDefinition, null, 2));
+                isaName = isaDefinition.name || 'Unknown';
+            }
             
             // Convert hex string to binary data
             let binaryData: Buffer;
@@ -45,19 +55,25 @@ export async function POST(request: NextRequest) {
             writeFileSync(binaryFile, binaryData);
 
             // Use Python script for disassembly
-            const pythonPath = path.join(process.cwd(), '.venv', 'bin', 'python');
             
             console.log('Running disassemble with Python');
             console.log('Binary file size:', binaryData.length, 'bytes');
             
+            // Determine how to load the ISA based on whether it's built-in or custom
+            const isaLoadCode = typeof isaDefinition === 'string' 
+              ? `isa = loader.load_isa('${isaName}')`
+              : `isa = loader.load_isa_from_file('${isaFile}')`;
+              
             const disassembleScript = `import sys
+import json
+from datetime import datetime
 sys.path.append('${process.cwd()}')
 from isa_xform import ISALoader
 from isa_xform.core import Disassembler
 
 # Load ISA
 loader = ISALoader()
-isa = loader.load_isa_from_file('${isaFile}')
+${isaLoadCode}
 
 # Create disassembler
 disassembler = Disassembler(isa)
@@ -69,22 +85,58 @@ with open('${binaryFile}', 'rb') as f:
 print(f"Binary data length: {len(binary_data)}")
 print(f"Binary data (hex): {binary_data.hex()}")
 
-# Disassemble
+# Disassemble with pseudo-instruction reconstruction DISABLED
 try:
-    result = disassembler.disassemble(binary_data)
+    result = disassembler.disassemble(binary_data, reconstruct_pseudo=False)
     
     print(f"Number of instructions: {len(result.instructions)}")
     
-    # Convert instructions to assembly text
+    # Generate formatted disassembly
     assembly_lines = []
-    for instr in result.instructions:
-        line = f"{instr.mnemonic}"
+    
+    # Header
+    assembly_lines.append(f"; Disassembly of {isa.name} v{isa.version}")
+    assembly_lines.append(f"; Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    assembly_lines.append(f"; Binary size: {len(binary_data)} bytes")
+    assembly_lines.append(f"; Word size: {isa.word_size} bits")
+    assembly_lines.append(f"; Endianness: {isa.endianness}")
+    assembly_lines.append("")
+    
+    # Instructions
+    current_address = 0
+    for i, instr in enumerate(result.instructions):
+        # Calculate address (assuming word-aligned)
+        word_size_bytes = isa.word_size // 8
+        address = current_address
+        
+        # Get machine code for this instruction
+        instr_start = i * word_size_bytes
+        instr_end = instr_start + word_size_bytes
+        if instr_end <= len(binary_data):
+            machine_code = binary_data[instr_start:instr_end]
+            hex_code = machine_code.hex().upper()
+        else:
+            hex_code = "????"
+        
+        # Format the instruction line
         if instr.operands:
-            line += f" {', '.join(instr.operands)}"
-        if instr.comment:
-            line += f" ; {instr.comment}"
+            operands_str = f" {', '.join(instr.operands)}"
+        else:
+            operands_str = ""
+        
+        # Add comment if available
+        comment = f" ; {instr.comment}" if instr.comment else ""
+        
+        # Format: address | hex_code | mnemonic operands ; comment
+        line = f"{address:04X}: {hex_code:>8} {instr.mnemonic}{operands_str}{comment}"
         assembly_lines.append(line)
-        print(f"Instruction: {line}")
+        
+        current_address += word_size_bytes
+    
+    # Footer
+    assembly_lines.append("")
+    assembly_lines.append(f"; Total instructions: {len(result.instructions)}")
+    assembly_lines.append(f"; Total size: {len(binary_data)} bytes")
     
     assembly_text = '\\n'.join(assembly_lines)
     

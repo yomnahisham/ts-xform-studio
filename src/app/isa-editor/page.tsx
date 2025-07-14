@@ -36,6 +36,7 @@ import {
   Moon,
   Sun
 } from 'lucide-react';
+import Simulator from '../components/Simulator';
 import Editor from '@monaco-editor/react';
 import Image from 'next/image';
 import JSZip from 'jszip';
@@ -284,6 +285,7 @@ DATA:
 
   // Resizable split state
   const [terminalHeight, setTerminalHeight] = useState(300); // px, default
+  const [simulatorEnlarged, setSimulatorEnlarged] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
@@ -1784,7 +1786,7 @@ const downloadAllAsZip = async (forceCompile = false) => {
         {/* Split Main Area: Editor (left) and Terminal/Simulator (right) */}
         <div className="flex-1 flex min-w-0 min-h-0">
           {/* Main Editor Area */}
-          <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${showExamples ? 'max-w-[calc(100vw-20rem)]' : ''}`}>
+          <div className={`${simulatorEnlarged ? 'hidden' : 'flex-1'} flex flex-col min-w-0 min-h-0 ${showExamples ? 'max-w-[calc(100vw-20rem)]' : ''}`}>
             {/* Tab Bar */}
             <div className={`h-10 ${darkMode ? 'bg-[#2d2d30] border-[#3e3e42]' : 'bg-white border-[#e0e0e0]'} border-b flex items-center`}>
               <div className="flex items-center h-full">
@@ -1909,7 +1911,7 @@ const downloadAllAsZip = async (forceCompile = false) => {
           </div>
 
           {/* Right Sidebar: Terminal/Errors (top), Simulator (bottom) */}
-          <div className="w-96 flex flex-col border-l border-gray-200 min-h-0 max-h-full bg-white" ref={sidebarRef}>
+          <div className={`${simulatorEnlarged ? 'w-full' : 'w-96'} flex flex-col border-l border-gray-200 min-h-0 max-h-full bg-white transition-all duration-300`} ref={sidebarRef}>
             {/* Terminal/Errors/Output Panel */}
             <div style={{ height: terminalHeight, minHeight: 100 }} className="border-b border-gray-200 flex flex-col">
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50">
@@ -1959,9 +1961,32 @@ const downloadAllAsZip = async (forceCompile = false) => {
               onMouseDown={handleDragStart}
               style={{ zIndex: 10 }}
             />
-            {/* Simulator Placeholder */}
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-gray-100 text-gray-400 text-lg font-semibold border-t border-gray-200">
-              Simulator (coming soon)
+            {/* Simulator */}
+            <div className="flex-1 min-h-0">
+              <Simulator 
+                isEnlarged={simulatorEnlarged}
+                onToggleSize={() => setSimulatorEnlarged(!simulatorEnlarged)}
+                darkMode={darkMode}
+                isaDefinition={(() => {
+                  const isaFile = activeIsaFileId 
+                    ? findFileNode(files, activeIsaFileId) 
+                    : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.json'));
+                  if (isaFile?.content) {
+                    try {
+                      return JSON.parse(isaFile.content);
+                    } catch (e) {
+                      return undefined;
+                    }
+                  }
+                  return undefined;
+                })()}
+                assemblyCode={(() => {
+                  const asmFile = activeAsmFileId 
+                    ? findFileNode(files, activeAsmFileId) 
+                    : findFirstFileRecursive(files, f => f.name.toLowerCase().endsWith('.asm'));
+                  return asmFile?.content || undefined;
+                })()}
+              />
             </div>
           </div>
         </div>

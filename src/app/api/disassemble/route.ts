@@ -94,22 +94,23 @@ try:
     # Generate formatted disassembly
     assembly_lines = []
     
-    # Header
-    assembly_lines.append(f"; Disassembly of {isa.name} v{isa.version}")
-    assembly_lines.append(f"; Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    assembly_lines.append(f"; Binary size: {len(binary_data)} bytes")
-    assembly_lines.append(f"; Word size: {isa.word_size} bits")
-    assembly_lines.append(f"; Endianness: {isa.endianness}")
+    # Header with better formatting
+    assembly_lines.append("=" * 60)
+    assembly_lines.append(f"DISASSEMBLY: {isa.name} v{isa.version}")
+    assembly_lines.append("=" * 60)
+    assembly_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    assembly_lines.append(f"Binary: {len(binary_data)} bytes")
+    assembly_lines.append(f"Format: {isa.word_size}-bit {isa.endianness} endian")
     assembly_lines.append("")
     
-    # Instructions
-    current_address = 0
+    # Column headers
+    assembly_lines.append("MACHINE CODE    INSTRUCTION")
+    assembly_lines.append("-" * 35)
+    
+    # Instructions with better formatting
     for i, instr in enumerate(result.instructions):
-        # Calculate address (assuming word-aligned)
-        word_size_bytes = isa.word_size // 8
-        address = current_address
-        
         # Get machine code for this instruction
+        word_size_bytes = isa.word_size // 8
         instr_start = i * word_size_bytes
         instr_end = instr_start + word_size_bytes
         if instr_end <= len(binary_data):
@@ -127,16 +128,14 @@ try:
         # Add comment if available
         comment = f" ; {instr.comment}" if instr.comment else ""
         
-        # Format: address | hex_code | mnemonic operands ; comment
-        line = f"{address:04X}: {hex_code:>8} {instr.mnemonic}{operands_str}{comment}"
+        # Format: hex_code | mnemonic operands ; comment
+        line = f"{hex_code:>8}    {instr.mnemonic}{operands_str}{comment}"
         assembly_lines.append(line)
-        
-        current_address += word_size_bytes
     
-    # Footer
-    assembly_lines.append("")
-    assembly_lines.append(f"; Total instructions: {len(result.instructions)}")
-    assembly_lines.append(f"; Total size: {len(binary_data)} bytes")
+    # Footer with summary
+    assembly_lines.append("-" * 35)
+    assembly_lines.append(f"Total: {len(result.instructions)} instructions, {len(binary_data)} bytes")
+    assembly_lines.append("=" * 60)
     
     assembly_text = '\\n'.join(assembly_lines)
     

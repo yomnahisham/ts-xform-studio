@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 
 export async function POST(request: NextRequest) {
   try {
-    const { isaDefinition, assemblyCode, steps = 1 } = await request.json();
+    const { isaDefinition, assemblyCode, steps = 10 } = await request.json();
 
     if (!isaDefinition || !assemblyCode) {
       return NextResponse.json(
@@ -19,222 +19,179 @@ export async function POST(request: NextRequest) {
     }
 
     const tempDir = tmpdir();
-    const isaFile = path.join(tempDir, `isa_${Date.now()}.json`);
-    const assemblyFile = path.join(tempDir, `assembly_${Date.now()}.s`);
-    const outputFile = path.join(tempDir, `simulation_${Date.now()}.json`);
-    let simulateScriptFile: string | undefined;
+    const simulationScriptFile = path.join(tempDir, `run_simulation_${Date.now()}.py`);
+    const outputFile = path.join(tempDir, `simulation_output_${Date.now()}.json`);
 
     try {
-      // Check if we're using a built-in ISA name or a custom ISA definition
-      const pythonPath = path.join(process.cwd(), '.venv', 'bin', 'python');
-      let isaName = 'custom';
-      
-      if (typeof isaDefinition === 'string') {
-        isaName = isaDefinition;
-        // For built-in ISA, we don't need to write a file
-      } else {
-        // Write custom ISA definition to temporary file
-        writeFileSync(isaFile, JSON.stringify(isaDefinition, null, 2));
-        isaName = isaDefinition.name || 'Unknown';
-      }
 
-      // Write assembly code to temporary file
-      writeFileSync(assemblyFile, assemblyCode);
-
-      // Create Python script for simulation
-      simulateScriptFile = path.join(tempDir, `simulate_${Date.now()}.py`);
-      
-      // Determine how to load the ISA based on whether it's built-in or custom
-      const isaLoadCode = typeof isaDefinition === 'string' 
-        ? `isa = loader.load_isa('${isaName}')`
-        : `isa = loader.load_isa_from_file('${isaFile}')`;
-        
-      const simulateScript = `import sys
+      // Create Python script that follows your main() function pattern
+             const pythonSimulationScript = `import sys
 import json
+from pathlib import Path
+
+# Add your project path
 sys.path.append('${process.cwd()}')
+
+# Import available xform modules
 from isa_xform import ISALoader, Parser
-from isa_xform.core import Assembler
+from isa_xform.core import Assembler, SymbolTable, Disassembler
 from isa_xform.core.instruction_executor import InstructionExecutor, ExecutionContext
-import json
 
-# Load ISA
-loader = ISALoader()
-${isaLoadCode}
-
-# Create parser and assembler
-parser = Parser(isa)
-assembler = Assembler(isa)
-
-# Parse and assemble the code
-ast_nodes = parser.parse('''${assemblyCode}''')
-result = assembler.assemble(ast_nodes)
-
-if not result.success:
-    print("ERROR: Assembly failed")
-    sys.exit(1)
-
-# Get machine code
-try:
-    if hasattr(result, 'machine_code'):
-        machine_code = result.machine_code
-    else:
-        machine_code = b''
-except Exception as e:
-    print(f"ERROR: Failed to get machine code: {e}")
-    sys.exit(1)
-
-# Xform Modular Simulator using InstructionExecutor
-class XformSimulator:
-    def __init__(self, isa, machine_code):
-        self.isa = isa
-        self.machine_code = machine_code
-        self.pc = 0
-        self.registers = {}
-        self.memory = {}
-        self.flags = {'Z': False, 'N': False, 'C': False, 'V': False}
+def run_simulation():
+    try:
+        # Load ISA
+        loader = ISALoader()
+        isa = loader.load_isa("zx16")
         
-        # Initialize registers from ISA
+        # Create parser and assembler
+        parser = Parser(isa)
+        assembler = Assembler(isa)
+        
+        # Parse and assemble the assembly code
+        assembly_code = """${assemblyCode}"""
+        ast_nodes = parser.parse(assembly_code)
+        result = assembler.assemble(ast_nodes)
+        
+        if not result.success:
+            return {"success": False, "error": "Assembly failed"}
+        
+        # Get machine code
+        machine_code = result.machine_code if hasattr(result, 'machine_code') else b''
+        
+        # Initialize registers
+        registers = {}
         if hasattr(isa, 'registers') and hasattr(isa.registers, 'general_purpose'):
             for reg in isa.registers.general_purpose:
                 reg_name = reg.name if hasattr(reg, 'name') else reg
-                self.registers[reg_name] = 0
+                registers[reg_name] = 0
         
         # Initialize memory with machine code
+        memory = bytearray(len(machine_code))
         for i, byte in enumerate(machine_code):
-            self.memory[i] = byte
+            memory[i] = byte
+        
+        # Initialize flags
+        flags = {'Z': False, 'N': False, 'C': False, 'V': False}
         
         # Create instruction executor
-        self.executor = InstructionExecutor(isa)
+        executor = InstructionExecutor()
         
-        # Create execution context
-        self.context = ExecutionContext()
-        self.context.flags = self.flags
-    
-    def read_word(self, addr):
-        """Read a 16-bit word from memory"""
-        if addr in self.memory and addr + 1 in self.memory:
-            return self.memory[addr] | (self.memory[addr + 1] << 8)
-        return 0
-    
-    def write_word(self, addr, value):
-        """Write a 16-bit word to memory"""
-        self.memory[addr] = value & 0xFF
-        self.memory[addr + 1] = (value >> 8) & 0xFF
-    
-    def step(self):
-        """Execute one instruction using xform instruction executor"""
-        if self.pc >= len(self.machine_code):
-            return False  # Halted
+        # Create execution context with proper parameters
+        context = ExecutionContext(registers, memory, 0, flags)
         
-        try:
-            # Read instruction (16-bit)
-            instruction = self.read_word(self.pc)
+        # Simulation state
+        simulation_states = []
+        
+        # Run simulation for specified steps
+        for step in range(${steps}):
+            if context.pc >= len(machine_code):
+                break  # Halted
             
-            # Create instruction object for executor
-            instruction_obj = {
-                'opcode': instruction & 0xF000,
-                'rd': (instruction >> 8) & 0x0F,
-                'rs': (instruction >> 4) & 0x0F,
-                'immediate': instruction & 0x00FF,
-                'raw': instruction
-            }
-            
-            # Execute instruction using xform executor
-            if self.executor.has_implementation(instruction_obj['opcode']):
-                # Use xform instruction executor
-                result = self.executor.execute_instruction(instruction_obj, self.context)
+            try:
+                # Read instruction (16-bit)
+                instruction = 0
+                if context.pc < len(memory) - 1:
+                    instruction = memory[context.pc] | (memory[context.pc + 1] << 8)
                 
-                # Update registers and flags from context
-                if hasattr(self.context, 'registers'):
-                    self.registers.update(self.context.registers)
-                if hasattr(self.context, 'flags'):
-                    self.flags.update(self.context.flags)
+                # Create instruction object for executor
+                instruction_obj = {
+                    'opcode': instruction & 0xF000,
+                    'rd': (instruction >> 8) & 0x0F,
+                    'rs': (instruction >> 4) & 0x0F,
+                    'immediate': instruction & 0x00FF,
+                    'raw': instruction
+                }
+                
+                # Execute instruction using xform executor
+                if executor.has_implementation(instruction_obj['opcode']):
+                    result = executor.execute_instruction(instruction_obj, context)
+                    
+                    # Update registers and flags from context
+                    registers.update(context.registers)
+                    flags.update(context.flags)
+                else:
+                    # Fallback to manual execution for basic instructions
+                    opcode = instruction_obj['opcode']
+                    rd = instruction_obj['rd']
+                    rs = instruction_obj['rs']
+                    immediate = instruction_obj['immediate']
+                    
+                    reg_names = [f'x{i}' for i in range(16)]
+                    
+                    if opcode == 0x0000:  # NOP
+                        pass
+                    elif opcode == 0x1000:  # ADD
+                        if rd < len(reg_names) and rs < len(reg_names):
+                            context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] + context.registers[reg_names[rs]]) & 0xFFFF
+                    elif opcode == 0x2000:  # SUB
+                        if rd < len(reg_names) and rs < len(reg_names):
+                            context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] - context.registers[reg_names[rs]]) & 0xFFFF
+                    elif opcode == 0x3000:  # LI (Load Immediate)
+                        if rd < len(reg_names):
+                            context.registers[reg_names[rd]] = immediate
+                
+                # Record current state
+                current_state = {
+                    'step': step,
+                    'pc': context.pc,
+                    'registers': dict(context.registers),
+                    'flags': dict(context.flags),
+                    'memory': dict(enumerate(memory))
+                }
+                
+                simulation_states.append(current_state)
                 
                 # Update PC
-                self.pc += 2
-            else:
-                # Fallback to manual execution for basic instructions
-                self._execute_basic_instruction(instruction_obj)
-            
-            return True
-            
-        except Exception as e:
-            print(f"ERROR: Instruction execution failed: {e}")
-            return False
-    
-    def _execute_basic_instruction(self, instruction):
-        """Fallback execution for basic instructions"""
-        opcode = instruction['opcode']
-        rd = instruction['rd']
-        rs = instruction['rs']
-        immediate = instruction['immediate']
+                context.pc += 2
+                
+            except Exception as e:
+                print(f"ERROR: Instruction execution failed: {e}")
+                break
         
-        reg_names = [f'x{i}' for i in range(16)]
-        
-        if opcode == 0x0000:  # NOP
-            pass
-        elif opcode == 0x1000:  # ADD
-            if rd < len(reg_names) and rs < len(reg_names):
-                self.registers[reg_names[rd]] = (self.registers[reg_names[rd]] + self.registers[reg_names[rs]]) & 0xFFFF
-        elif opcode == 0x2000:  # SUB
-            if rd < len(reg_names) and rs < len(reg_names):
-                self.registers[reg_names[rd]] = (self.registers[reg_names[rd]] - self.registers[reg_names[rs]]) & 0xFFFF
-        elif opcode == 0x3000:  # LI (Load Immediate)
-            if rd < len(reg_names):
-                self.registers[reg_names[rd]] = immediate
-        
-        # Update PC
-        self.pc += 2
-
-# Create simulator
-simulator = XformSimulator(isa, machine_code)
-
-# Run simulation for specified steps
-simulation_states = []
-for step in range(${steps}):
-    try:
-        # Get current state
-        current_state = {
-            'step': step,
-            'pc': simulator.pc,
-            'registers': simulator.registers.copy(),
-            'flags': simulator.flags.copy(),
-            'memory': simulator.memory.copy()
+        # Return simulation results
+        output_data = {
+            'success': True,
+            'states': simulation_states,
+            'total_steps': len(simulation_states),
+            'halted': len(simulation_states) < ${steps},
+            'isa_name': isa.name if hasattr(isa, 'name') else 'zx16',
+            'machine_code_hex': machine_code.hex(),
+            'registers': dict(context.registers),
+            'memory': dict(enumerate(memory)),
+            'pc': context.pc,
+            'message': 'Simulation completed successfully'
         }
         
-        simulation_states.append(current_state)
+        return output_data
         
-        # Execute one step
-        if not simulator.step():
-            break  # Halted
-            
     except Exception as e:
-        print(f"ERROR: Simulation step {step} failed: {e}")
-        break
+        return {"success": False, "error": f"Simulation failed: {str(e)}"}
 
-# Write simulation results
-output_data = {
-    'success': True,
-    'states': simulation_states,
-    'total_steps': len(simulation_states),
-    'halted': len(simulation_states) < ${steps},
-    'isa_name': isa.name if hasattr(isa, 'name') else 'Unknown',
-    'machine_code_hex': machine_code.hex()
-}
+# Run the simulation and save results
+if __name__ == "__main__":
+    result = run_simulation()
+    
+    # Write results to output file
+    with open('${outputFile}', 'w') as f:
+        json.dump(result, f, indent=2)
+    
+    if result['success']:
+        print("SIMULATION_SUCCESS")
+    else:
+        print(f"SIMULATION_ERROR: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+`;
 
-with open('${outputFile}', 'w') as f:
-    json.dump(output_data, f, indent=2)
+      // Write and execute the Python script
+      writeFileSync(simulationScriptFile, pythonSimulationScript);
 
-print("SUCCESS")`;
-
-      writeFileSync(simulateScriptFile, simulateScript);
-
+      const pythonPath = path.join(process.cwd(), '.venv', 'bin', 'python');
       const { stdout, stderr } = await execAsync(
-        `${pythonPath} "${simulateScriptFile}"`,
+        `${pythonPath} "${simulationScriptFile}"`,
         { timeout: 30000, cwd: tempDir }
       );
 
-      if (stderr) {
+      if (stderr && !stdout.includes('SIMULATION_SUCCESS')) {
         console.error('Simulation error:', stderr);
         return NextResponse.json(
           { error: 'Simulation failed', details: stderr },
@@ -242,15 +199,7 @@ print("SUCCESS")`;
         );
       }
 
-      if (!stdout.includes('SUCCESS')) {
-        console.error('Simulation failed:', stdout);
-        return NextResponse.json(
-          { error: 'Simulation failed', details: stdout },
-          { status: 400 }
-        );
-      }
-
-      // Read the simulation output
+      // Read simulation results
       let simulationData: any;
       try {
         const outputContent = readFileSync(outputFile, 'utf-8');
@@ -265,25 +214,19 @@ print("SUCCESS")`;
 
       return NextResponse.json({
         ...simulationData,
-        message: 'Simulation completed successfully',
-        isaName: isaName
+        message: 'Simulation completed successfully'
       });
 
-    } finally {
-      // Clean up temporary files
-      try {
-        if (typeof isaDefinition !== 'string') {
-          unlinkSync(isaFile);
+          } finally {
+        // Clean up temporary files
+        try {
+          unlinkSync(simulationScriptFile);
+          unlinkSync(outputFile);
+        } catch (cleanupError) {
+          console.warn('Failed to cleanup temporary files:', cleanupError);
         }
-        unlinkSync(assemblyFile);
-        unlinkSync(outputFile);
-        if (simulateScriptFile) {
-          unlinkSync(simulateScriptFile);
-        }
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup temporary files:', cleanupError);
       }
-    }
+
   } catch (error) {
     console.error('Simulate API error:', error);
     return NextResponse.json(
@@ -291,4 +234,4 @@ print("SUCCESS")`;
       { status: 500 }
     );
   }
-} 
+}

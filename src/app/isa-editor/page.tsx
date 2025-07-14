@@ -1244,14 +1244,17 @@ DATA:
         const data = await res.json();
         
         setTerminalHistory(prev => [...prev, `✅ Assembly successful!`]);
-        setTerminalHistory(prev => [...prev, `📄 Machine Code: ${data.machineCode}`]);
         
-        if (data.stdout) {
-          setTerminalHistory(prev => [...prev, `📋 Output: ${data.stdout}`]);
+        // Convert assembledCode array to hex string
+        const hexString = data.assembledCode.map((byte: number) => byte.toString(16).padStart(2, '0')).join('');
+        setTerminalHistory(prev => [...prev, `📄 Machine Code: ${hexString}`]);
+        
+        if (data.details) {
+          setTerminalHistory(prev => [...prev, `📋 Output: ${data.details}`]);
         }
 
         // Create output file with formatted hex
-        const formattedHex = formatHexByWordLength(data.machineCode, isaJson.word_size || 16);
+        const formattedHex = formatHexByWordLength(hexString, isaJson.word_size || 16);
         const outputFile: FileNode = {
           id: `output-${Date.now()}`,
           name: `${asmFile.name.replace(/\.[^/.]+$/, '')}_output.hex`,

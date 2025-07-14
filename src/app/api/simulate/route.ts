@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 
 export async function POST(request: NextRequest) {
   try {
-    const { isaDefinition, assemblyCode, steps = 10 } = await request.json();
+    const { isaDefinition, assemblyCode, action = 'initialize', currentState = null } = await request.json();
 
     if (!isaDefinition || !assemblyCode) {
       return NextResponse.json(
@@ -82,84 +82,120 @@ def run_simulation():
         # Simulation state
         simulation_states = []
         
-        # Run simulation for specified steps
-        for step in range(${steps}):
+        # Handle different actions
+        action = "${action}"
+        
+        if action == 'initialize':
+            # Just return initial state
+            current_state = {
+                'step': 0,
+                'pc': context.pc,
+                'registers': dict(context.registers),
+                'flags': dict(context.flags),
+                'memory': dict(enumerate(memory)),
+                'halted': False
+            }
+            simulation_states = [current_state]
+        elif action == 'step':
+            # Execute one step
             if context.pc >= len(machine_code):
-                break  # Halted
-            
-            try:
-                # Read instruction (16-bit)
-                instruction = 0
-                if context.pc < len(memory) - 1:
-                    instruction = memory[context.pc] | (memory[context.pc + 1] << 8)
-                
-                # Create instruction object for executor
-                instruction_obj = {
-                    'opcode': instruction & 0xF000,
-                    'rd': (instruction >> 8) & 0x0F,
-                    'rs': (instruction >> 4) & 0x0F,
-                    'immediate': instruction & 0x00FF,
-                    'raw': instruction
-                }
-                
-                # Execute instruction using xform executor
-                if executor.has_implementation(instruction_obj['opcode']):
-                    result = executor.execute_instruction(instruction_obj, context)
-                    
-                    # Update registers and flags from context
-                    registers.update(context.registers)
-                    flags.update(context.flags)
-                else:
-                    # Fallback to manual execution for basic instructions
-                    opcode = instruction_obj['opcode']
-                    rd = instruction_obj['rd']
-                    rs = instruction_obj['rs']
-                    immediate = instruction_obj['immediate']
-                    
-                    reg_names = [f'x{i}' for i in range(16)]
-                    
-                    if opcode == 0x0000:  # NOP
-                        pass
-                    elif opcode == 0x1000:  # ADD
-                        if rd < len(reg_names) and rs < len(reg_names):
-                            context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] + context.registers[reg_names[rs]]) & 0xFFFF
-                    elif opcode == 0x2000:  # SUB
-                        if rd < len(reg_names) and rs < len(reg_names):
-                            context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] - context.registers[reg_names[rs]]) & 0xFFFF
-                    elif opcode == 0x3000:  # LI (Load Immediate)
-                        if rd < len(reg_names):
-                            context.registers[reg_names[rd]] = immediate
-                
-                # Record current state
+                # Already halted
                 current_state = {
-                    'step': step,
+                    'step': 0,
                     'pc': context.pc,
                     'registers': dict(context.registers),
                     'flags': dict(context.flags),
-                    'memory': dict(enumerate(memory))
+                    'memory': dict(enumerate(memory)),
+                    'halted': True
                 }
-                
-                simulation_states.append(current_state)
-                
-                # Update PC
-                context.pc += 2
-                
-            except Exception as e:
-                print(f"ERROR: Instruction execution failed: {e}")
-                break
+                simulation_states = [current_state]
+            else:
+                try:
+                    # Read instruction (16-bit)
+                    instruction = 0
+                    if context.pc < len(memory) - 1:
+                        instruction = memory[context.pc] | (memory[context.pc + 1] << 8)
+                    
+                    # Create instruction object for executor
+                    instruction_obj = {
+                        'opcode': instruction & 0xF000,
+                        'rd': (instruction >> 8) & 0x0F,
+                        'rs': (instruction >> 4) & 0x0F,
+                        'immediate': instruction & 0x00FF,
+                        'raw': instruction
+                    }
+                    
+                    # Execute instruction using xform executor
+                    if executor.has_implementation(instruction_obj['opcode']):
+                        result = executor.execute_instruction(instruction_obj, context)
+                        
+                        # Update registers and flags from context
+                        registers.update(context.registers)
+                        flags.update(context.flags)
+                    else:
+                        # Fallback to manual execution for basic instructions
+                        opcode = instruction_obj['opcode']
+                        rd = instruction_obj['rd']
+                        rs = instruction_obj['rs']
+                        immediate = instruction_obj['immediate']
+                        
+                        reg_names = [f'x{i}' for i in range(16)]
+                        
+                        if opcode == 0x0000:  # NOP
+                            pass
+                        elif opcode == 0x1000:  # ADD
+                            if rd < len(reg_names) and rs < len(reg_names):
+                                context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] + context.registers[reg_names[rs]]) & 0xFFFF
+                        elif opcode == 0x2000:  # SUB
+                            if rd < len(reg_names) and rs < len(reg_names):
+                                context.registers[reg_names[rd]] = (context.registers[reg_names[rd]] - context.registers[reg_names[rs]]) & 0xFFFF
+                        elif opcode == 0x3000:  # LI (Load Immediate)
+                            if rd < len(reg_names):
+                                context.registers[reg_names[rd]] = immediate
+                    
+                    # Record current state
+                    current_state = {
+                        'step': 0,
+                        'pc': context.pc,
+                        'registers': dict(context.registers),
+                        'flags': dict(context.flags),
+                        'memory': dict(enumerate(memory)),
+                        'halted': False
+                    }
+                    
+                    # Update PC
+                    context.pc += 2
+                    
+                    # Check if halted after step
+                    if context.pc >= len(machine_code):
+                        current_state['halted'] = True
+                    
+                    simulation_states = [current_state]
+                    
+                except Exception as e:
+                    print(f"ERROR: Instruction execution failed: {e}")
+                    current_state = {
+                        'step': 0,
+                        'pc': context.pc,
+                        'registers': dict(context.registers),
+                        'flags': dict(context.flags),
+                        'memory': dict(enumerate(memory)),
+                        'halted': True,
+                        'error': str(e)
+                    }
+                    simulation_states = [current_state]
         
         # Return simulation results
         output_data = {
             'success': True,
             'states': simulation_states,
-            'total_steps': len(simulation_states),
-            'halted': len(simulation_states) < ${steps},
+            'current_state': simulation_states[0] if simulation_states else None,
             'isa_name': isa.name if hasattr(isa, 'name') else 'zx16',
             'machine_code_hex': machine_code.hex(),
             'registers': dict(context.registers),
             'memory': dict(enumerate(memory)),
             'pc': context.pc,
-            'message': 'Simulation completed successfully'
+            'message': 'Simulation step completed'
         }
         
         return output_data

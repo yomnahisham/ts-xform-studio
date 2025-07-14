@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Loader2
 } from 'lucide-react';
 
@@ -143,8 +144,8 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Run simulation with xform
-  const runSimulation = async (steps: number = 1) => {
-    console.log('Simulator received:', { isaDefinition, assemblyCode });
+  const runSimulation = async (action: 'initialize' | 'step' = 'initialize') => {
+    console.log('Simulator received:', { isaDefinition, assemblyCode, action });
     
     if (!isaDefinition || !assemblyCode) {
       setError(`No ISA definition or assembly code provided. ISA: ${!!isaDefinition}, Assembly: ${!!assemblyCode}`);
@@ -161,7 +162,8 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
         body: JSON.stringify({ 
           isaDefinition, 
           assemblyCode, 
-          steps 
+          action,
+          currentState: currentState
         })
       });
 
@@ -171,10 +173,16 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
         throw new Error(data.error || 'Simulation failed');
       }
 
-      setSimulationStates(data.states || []);
-      if (data.states && data.states.length > 0) {
-        setCurrentState(data.states[data.states.length - 1]);
-        setCurrentStep(data.states.length - 1);
+      if (action === 'initialize') {
+        setSimulationStates(data.states || []);
+        setCurrentStep(0);
+      }
+      
+      if (data.current_state) {
+        setCurrentState(data.current_state);
+        if (action === 'step') {
+          setCurrentStep(prev => prev + 1);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Simulation failed');
@@ -185,13 +193,7 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
 
   // Execute next step
   const executeStep = () => {
-    if (currentStep < simulationStates.length - 1) {
-      setCurrentStep(prev => prev + 1);
-      setCurrentState(simulationStates[currentStep + 1]);
-    } else {
-      // Run one more step
-      runSimulation(1);
-    }
+    runSimulation('step');
   };
 
   // Start/stop simulation
@@ -205,7 +207,7 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
     } else {
       // Initialize simulation if not already done
       if (simulationStates.length === 0) {
-        runSimulation(10); // Run 10 steps initially
+        runSimulation('initialize');
       } else {
         intervalRef.current = setInterval(executeStep, executionSpeed);
         setIsRunning(true);
@@ -263,6 +265,15 @@ export default function Simulator({ isEnlarged, onToggleSize, darkMode, isaDefin
             title={isRunning ? 'Pause' : 'Run'}
           >
             {isRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+          
+          <button
+            onClick={executeStep}
+            className="p-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded transition-colors"
+            title="Step"
+            disabled={isLoading}
+          >
+            <ChevronRight className="w-4 h-4" />
           </button>
           
           <button
